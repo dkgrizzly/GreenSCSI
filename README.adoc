@@ -5,6 +5,7 @@ GreenSCSI, BlueSCSI & ArdSCSino are hardware that reproduces SCSI devices (hard 
 
 `GreenSCSI` created by https://github.com/dkgrizzly[dkgrizzly] is a fork of `BlueSCSI` which adds:
 
+* Teensy 3.5 (Kinetis K64...) support
 * Better LUN handling
 
 `BlueSCSI` created by https://github.com/erichelgeson[erichelgeson] is a fork of `ArdSCSino-stm32`
