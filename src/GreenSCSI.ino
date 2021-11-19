@@ -1,5 +1,6 @@
 /*  
- *  BlueSCSI
+ *  GreenSCSI
+ *  Copyright (c) 2021  David Kuder
  *  Copyright (c) 2021  Eric Helgeson, Androda
  *  
  *  This file is free software: you may copy, redistribute and/or modify it  
@@ -36,11 +37,9 @@
  */
 
 #include <Arduino.h> // For Platform.IO
+#include <SPI.h>
 #include <SdFat.h>
-
-#ifdef USE_STM32_DMA
-#warning "warning USE_STM32_DMA"
-#endif
+#include "sdios.h"
 
 #define DEBUG            0      // 0:No debug information output
                                 // 1: Debug information output to USB Serial
@@ -55,15 +54,14 @@
 
 // SCSI config
 #define NUM_SCSIID  7          // Maximum number of supported SCSI-IDs (The minimum is 0)
-#define NUM_SCSILUN 2          // Maximum number of LUNs supported     (The minimum is 0)
+#define NUM_SCSILUN 7          // Maximum number of LUNs supported     (The minimum is 0)
 #define READ_PARITY_CHECK 0    // Perform read parity check (unverified)
 
 // HDD format
-#define MAX_BLOCKSIZE 1024     // Maximum BLOCK size
+#define MAX_BLOCKSIZE 4096     // Maximum BLOCK size
 
 // SDFAT
-#define SD1_CONFIG SdSpiConfig(PA4, DEDICATED_SPI, SD_SCK_MHZ(SPI_FULL_SPEED), &SPI)
-SdFs SD;
+SdFs sd;
 
 #if DEBUG == 1
 #define LOG(XX)     Serial.print(XX)
@@ -82,93 +80,67 @@ SdFs SD;
 #define LOGHEXN(XX) //Serial.println(XX, HEX)
 #endif
 
-#define active   1
-#define inactive 0
-#define high 0
-#define low 1
+#define DB0       0     // SCSI:DB0
+#define DB1       1     // SCSI:DB1
+#define DB2       29    // SCSI:DB2
+#define DB3       30    // SCSI:DB3
+#define DB4       43    // SCSI:DB4
+#define DB5       46    // SCSI:DB5
+#define DB6       44    // SCSI:DB6
+#define DB7       45    // SCSI:DB7
+#define DB8       32     // SCSI:DBP
+#define ATN       12    // SCSI:ATN
+#define BSY       10    // SCSI:BSY
+#define ACK       9     // SCSI:ACK
+#define RST       8     // SCSI:RST
+#define MSG       7     // SCSI:MSG
+#define SEL       6     // SCSI:SEL
+#define CD        5     // SCSI:C/D
+#define REQ       4     // SCSI:REQ
+#define IO        3     // SCSI:I/O
 
-#define isHigh(XX) ((XX) == high)
-#define isLow(XX) ((XX) != high)
-
-#define gpio_mode(pin,val) gpio_set_mode(PIN_MAP[pin].gpio_device, PIN_MAP[pin].gpio_bit, val);
-#define gpio_write(pin,val) gpio_write_bit(PIN_MAP[pin].gpio_device, PIN_MAP[pin].gpio_bit, val)
-#define gpio_read(pin) gpio_read_bit(PIN_MAP[pin].gpio_device, PIN_MAP[pin].gpio_bit)
-
-//#define DB0       PB8     // SCSI:DB0
-//#define DB1       PB9     // SCSI:DB1
-//#define DB2       PB10    // SCSI:DB2
-//#define DB3       PB11    // SCSI:DB3
-//#define DB4       PB12    // SCSI:DB4
-//#define DB5       PB13    // SCSI:DB5
-//#define DB6       PB14    // SCSI:DB6
-//#define DB7       PB15    // SCSI:DB7
-//#define DBP       PB0     // SCSI:DBP
-#define ATN       PA8      // SCSI:ATN
-#define BSY       PA9      // SCSI:BSY
-#define ACK       PA10     // SCSI:ACK
-#define RST       PA15     // SCSI:RST
-#define MSG       PB3      // SCSI:MSG
-#define SEL       PB4      // SCSI:SEL
-#define CD        PB5      // SCSI:C/D
-#define REQ       PB6      // SCSI:REQ
-#define IO        PB7      // SCSI:I/O
-#define LED2      PA0      // External LED
-
-#define SD_CS     PA4      // SDCARD:CS
-#define LED       PC13     // LED
-
-// GPIO register port
-#define PAREG GPIOA->regs
-#define PBREG GPIOB->regs
+#define SD_CS     BUILTIN_SDCARD      // SDCARD:CS
+#define LED       13     // LED
 
 // LED control
-#define LED_ON()       gpio_write(LED, high); gpio_write(LED2, low);
-#define LED_OFF()      gpio_write(LED, low); gpio_write(LED2, high);
-
-// Virtual pin (Arduio compatibility is slow, so make it MCU-dependent)
-#define PA(BIT)       (BIT)
-#define PB(BIT)       (BIT+16)
-// Virtual pin decoding
-#define GPIOREG(VPIN)    ((VPIN)>=16?PBREG:PAREG)
-#define BITMASK(VPIN) (1<<((VPIN)&15))
-
-#define vATN       PA(8)      // SCSI:ATN
-#define vBSY       PA(9)      // SCSI:BSY
-#define vACK       PA(10)     // SCSI:ACK
-#define vRST       PA(15)     // SCSI:RST
-#define vMSG       PB(3)      // SCSI:MSG
-#define vSEL       PB(4)      // SCSI:SEL
-#define vCD        PB(5)      // SCSI:C/D
-#define vREQ       PB(6)      // SCSI:REQ
-#define vIO        PB(7)      // SCSI:I/O
-#define vSD_CS     PA(4)      // SDCARD:CS
+#define LED_ON()       digitalWrite(LED, HIGH);
+#define LED_OFF()      digitalWrite(LED, LOW);
 
 // SCSI output pin control: opendrain active LOW (direct pin drive)
-#define SCSI_OUT(VPIN,ACTIVE) { GPIOREG(VPIN)->BSRR = BITMASK(VPIN)<<((ACTIVE)?16:0); }
+inline void SCSI_OUT(int VPIN, boolean ACTIVE) {
+  if(ACTIVE) {
+    pinMode(VPIN, OUTPUT_OPENDRAIN);
+    digitalWrite(VPIN, LOW);
+  } else {
+    pinMode(VPIN, INPUT);
+  }
+};
 
-// SCSI input pin check (inactive=0,avtive=1)
-#define SCSI_IN(VPIN) ((~GPIOREG(VPIN)->IDR>>(VPIN&15))&1)
+// SCSI input pin check (invert)
+inline boolean SCSI_IN(int VPIN) {
+  pinMode(VPIN, INPUT_PULLUP);
+  return !digitalRead(VPIN);
+};
 
-// GPIO mode
-// IN , FLOAT      : 4
-// IN , PU/PD      : 8
-// OUT, PUSH/PULL  : 3
-// OUT, OD         : 1
-//#define DB_MODE_OUT 3
-#define DB_MODE_OUT 1
-#define DB_MODE_IN  8
+#define SCSI_DB_MASK 0x00ff0800
 
 // Put DB and DP in output mode
-#define SCSI_DB_OUTPUT() { PBREG->CRL=(PBREG->CRL &0xfffffff0)|DB_MODE_OUT; PBREG->CRH = 0x11111111*DB_MODE_OUT; }
+inline void SCSI_DB_OUTPUT() {
+  GPIOB_PDOR = SCSI_DB_MASK;
+  GPIOB_PDDR = 0x00000000;
+}
+
 // Put DB and DP in input mode
-#define SCSI_DB_INPUT()  { PBREG->CRL=(PBREG->CRL &0xfffffff0)|DB_MODE_IN ; PBREG->CRH = 0x11111111*DB_MODE_IN;  }
+inline void SCSI_DB_INPUT()  {
+  GPIOB_PDDR = 0x00000000;
+}
 
 // Turn on the output only for BSY
-#define SCSI_BSY_ACTIVE()      { gpio_mode(BSY, GPIO_OUTPUT_OD); SCSI_OUT(vBSY,  active) }
+#define SCSI_BSY_ACTIVE()      { SCSI_OUT(BSY, true); }
 // BSY,REQ,MSG,CD,IO Turn on the output (no change required for OD)
 #define SCSI_TARGET_ACTIVE()   { }
 // BSY,REQ,MSG,CD,IO Turn off output, BSY is the last input
-#define SCSI_TARGET_INACTIVE() { SCSI_OUT(vREQ,inactive); SCSI_OUT(vMSG,inactive); SCSI_OUT(vCD,inactive);SCSI_OUT(vIO,inactive); SCSI_OUT(vBSY,inactive); gpio_mode(BSY, GPIO_INPUT_PU); }
+#define SCSI_TARGET_INACTIVE() { SCSI_OUT(REQ, false); SCSI_OUT(MSG, false); SCSI_OUT(CD, false); SCSI_OUT(IO, false); SCSI_OUT(BSY, false); pinMode(BSY, INPUT_PULLUP); }
 
 // HDDiamge file
 #define HDIMG_ID_POS  2                 // Position to embed ID number
@@ -179,9 +151,9 @@ SdFs SD;
 // HDD image
 typedef struct hddimg_struct
 {
-	FsFile      m_file;                 // File object
-	uint64_t    m_fileSize;             // File size
-	size_t      m_blocksize;            // SCSI BLOCK size
+    FsFile      m_file;                 // File object
+    uint64_t    m_fileSize;             // File size
+    size_t      m_blocksize;            // SCSI BLOCK size
 }HDDIMG;
 HDDIMG  img[NUM_SCSIID][NUM_SCSILUN]; // Maximum number
 
@@ -199,20 +171,15 @@ int           m_msc;
 byte          m_msb[256];             // Command storage bytes
 
 /*
- *  Data byte to BSRR register setting value and parity table
+ *  Data byte to GPIOB register setting value and parity table
 */
 
+
 // Parity bit generation
-#define PTY(V)   (1^((V)^((V)>>1)^((V)>>2)^((V)>>3)^((V)>>4)^((V)>>5)^((V)>>6)^((V)>>7))&1)
+#define PTY(V)   ((1^((V)^((V)>>1)^((V)>>2)^((V)>>3)^((V)>>4)^((V)>>5)^((V)>>6)^((V)>>7)))&1)
 
-// Data byte to BSRR register setting value conversion table
-// BSRR[31:24] =  DB[7:0]
-// BSRR[   16] =  PTY(DB)
-// BSRR[15: 8] = ~DB[7:0]
-// BSRR[    0] = ~PTY(DB)
-
-// Set DBP, set REQ = inactive
-#define DBP(D)    ((((((uint32_t)(D)<<8)|PTY(D))*0x00010001)^0x0000ff01)|BITMASK(vREQ))
+// Set DBP
+#define DBP(D)    (((uint32_t)(D)<<16)|(PTY(D)<<11))
 
 #define DBP8(D)   DBP(D),DBP(D+1),DBP(D+2),DBP(D+3),DBP(D+4),DBP(D+5),DBP(D+6),DBP(D+7)
 #define DBP32(D)  DBP8(D),DBP8(D+8),DBP8(D+16),DBP8(D+24)
@@ -223,7 +190,7 @@ static const uint32_t db_bsrr[256]={
   DBP32(0x80),DBP32(0xA0),DBP32(0xC0),DBP32(0xE0)
 };
 // Parity bit acquisition
-#define PARITY(DB) (db_bsrr[DB]&1)
+#define PARITY(DB) ((db_bsrr[DB & 0xff] & 0x0800) >> 11)
 
 // Macro cleaning
 #undef DBP32
@@ -281,10 +248,10 @@ void finalizeFileLog(void);
 inline byte readIO(void)
 {
   // Port input data register
-  uint32_t ret = GPIOB->regs->IDR;
-  byte bret = (byte)((~ret)>>8);
+  uint32_t ret = GPIOB_PDIR;
+  byte bret = (byte)((~ret)>>16);
 #if READ_PARITY_CHECK
-  if((db_bsrr[bret]^ret)&1)
+  if((db_bsrr[bret]^ret)&0x800)
     m_sts |= 0x01; // parity error
 #endif
 
@@ -294,7 +261,7 @@ inline byte readIO(void)
 // If config file exists, read the first three lines and copy the contents.
 // File must be well formed or you will get junk in the SCSI Vendor fields.
 void readSCSIDeviceConfig() {
-  FsFile config_file = SD.open("scsi-config.txt", O_RDONLY);
+  FsFile config_file = sd.open("scsi-config.txt", O_RDONLY);
   if (!config_file.isOpen()) {
     return;
   }
@@ -326,7 +293,7 @@ void readSDCardInfo()
 {
   cid_t sd_cid;
 
-  if(SD.card()->readCID(&sd_cid))
+  if(sd.card()->readCID(&sd_cid))
   {
     LOG_FILE.print("Sd MID:");
     LOG_FILE.print(sd_cid.mid, 16);
@@ -361,7 +328,7 @@ bool hddimageOpen(HDDIMG *h,const char *image_name,int id,int lun,int blocksize)
 {
   h->m_fileSize = 0;
   h->m_blocksize = blocksize;
-  h->m_file = SD.open(image_name, O_RDWR);
+  h->m_file = sd.open(image_name, O_RDWR);
   if(h->m_file.isOpen())
   {
     h->m_fileSize = h->m_file.size();
@@ -395,52 +362,43 @@ bool hddimageOpen(HDDIMG *h,const char *image_name,int id,int lun,int blocksize)
  */
 void setup()
 {
-  // PA15 / PB3 / PB4 Cannot be used
-  // JTAG Because it is used for debugging.
-  disableDebugPorts();
-
-  // Serial initialization
-#if DEBUG > 0
-  Serial.begin(9600);
-  // If using a USB->TTL monitor instead of USB serial monitor - you can uncomment this.
-  //while (!Serial);
-#endif
-
   // PIN initialization
-  gpio_mode(LED2, GPIO_OUTPUT_PP);
-  gpio_mode(LED, GPIO_OUTPUT_OD);
+  pinMode(LED, OUTPUT);
   LED_OFF();
 
   //GPIO(SCSI BUS)Initialization
-  //Port setting register (lower)
-//  GPIOB->regs->CRL |= 0x000000008; // SET INPUT W/ PUPD on PAB-PB0
-  //Port setting register (upper)
-  //GPIOB->regs->CRH = 0x88888888; // SET INPUT W/ PUPD on PB15-PB8
-//  GPIOB->regs->ODR = 0x0000FF00; // SET PULL-UPs on PB15-PB8
-  // DB and DP are input modes
-  SCSI_DB_INPUT()
 
   // Input port
-  gpio_mode(ATN, GPIO_INPUT_PU);
-  gpio_mode(BSY, GPIO_INPUT_PU);
-  gpio_mode(ACK, GPIO_INPUT_PU);
-  gpio_mode(RST, GPIO_INPUT_PU);
-  gpio_mode(SEL, GPIO_INPUT_PU);
+  pinMode(ATN, INPUT_PULLUP);
+  pinMode(BSY, INPUT_PULLUP);
+  pinMode(ACK, INPUT_PULLUP);
+  pinMode(RST, INPUT_PULLUP);
+  pinMode(SEL, INPUT_PULLUP);
   // Output port
-  gpio_mode(MSG, GPIO_OUTPUT_OD);
-  gpio_mode(CD,  GPIO_OUTPUT_OD);
-  gpio_mode(REQ, GPIO_OUTPUT_OD);
-  gpio_mode(IO,  GPIO_OUTPUT_OD);
-  // Turn off the output port
-  SCSI_TARGET_INACTIVE()
+  pinMode(MSG, OUTPUT_OPENDRAIN);
+  pinMode(CD,  OUTPUT_OPENDRAIN);
+  pinMode(REQ, OUTPUT_OPENDRAIN);
+  pinMode(IO,  OUTPUT_OPENDRAIN);
 
-  //Occurs when the RST pin state changes from HIGH to LOW
-  //attachInterrupt(PIN_MAP[RST].gpio_bit, onBusReset, FALLING);
+  pinMode(DB0, OUTPUT_OPENDRAIN);
+  pinMode(DB1, OUTPUT_OPENDRAIN);
+  pinMode(DB2, OUTPUT_OPENDRAIN);
+  pinMode(DB3, OUTPUT_OPENDRAIN);
+  pinMode(DB4, OUTPUT_OPENDRAIN);
+  pinMode(DB5, OUTPUT_OPENDRAIN);
+  pinMode(DB6, OUTPUT_OPENDRAIN);
+  pinMode(DB7, OUTPUT_OPENDRAIN);
+  pinMode(DB8, OUTPUT_OPENDRAIN);
+
+  // DB and DP are input modes
+  SCSI_DB_INPUT();
+  
+  // Turn off the output port
+  SCSI_TARGET_INACTIVE();
 
   LED_ON();
 
-  // clock = 36MHz , about 4Mbytes/sec
-  if(!SD.begin(SD1_CONFIG)) {
+  if(!sd.begin(SdioConfig(FIFO_SDIO))) {
 #if DEBUG > 0
     Serial.println("SD initialization failed!");
 #endif
@@ -483,6 +441,7 @@ void setup()
 
           if(tmp_id > -1 && tmp_id < 8) {
             id = tmp_id; // If valid id, set it, else use default
+          } else {
             usedDefaultId++;
           }
         }
@@ -493,7 +452,7 @@ void setup()
             lun = tmp_lun; // If valid id, set it, else use default
           }
         }
-        int blk1, blk2, blk3, blk4 = 0;
+        int blk1 = 0, blk2 = 0, blk3 = 0, blk4 = 0;
         if(file_name_length > 8) { // HD00_[111]
           blk1 = name[HDIMG_BLK_POS] - '0';
           blk2 = name[HDIMG_BLK_POS+1] - '0';
@@ -541,16 +500,17 @@ void setup()
 
   finalizeFileLog();
   LED_OFF();
+
   //Occurs when the RST pin state changes from HIGH to LOW
-  attachInterrupt(PIN_MAP[RST].gpio_bit, onBusReset, FALLING);
+  attachInterrupt(RST, onBusReset, FALLING);
 }
 
 /*
  * Setup initialization logfile
  */
 void initFileLog() {
-  LOG_FILE = SD.open(LOG_FILENAME, O_WRONLY | O_CREAT | O_TRUNC);
-  LOG_FILE.println("BlueSCSI <-> SD - https://github.com/erichelgeson/BlueSCSI");
+  LOG_FILE = sd.open(LOG_FILENAME, O_WRONLY | O_CREAT | O_TRUNC);
+  LOG_FILE.println("GreenSCSI <-> SD - https://github.com/dkgrizzly/GreenSCSI");
   LOG_FILE.print("VERSION: ");
   LOG_FILE.println(VERSION);
   LOG_FILE.print("DEBUG:");
@@ -645,17 +605,13 @@ void onBusReset(void)
   // I can't filter because it only activates about 1.25us
   {{
 #else
-  if(isHigh(gpio_read(RST))) {
+  if(!digitalRead(RST))) {
     delayMicroseconds(20);
-    if(isHigh(gpio_read(RST))) {
+    if(!digitalRead(RST))) {
 #endif  
   // BUS FREE is done in the main process
-//      gpio_mode(MSG, GPIO_OUTPUT_OD);
-//      gpio_mode(CD,  GPIO_OUTPUT_OD);
-//      gpio_mode(REQ, GPIO_OUTPUT_OD);
-//      gpio_mode(IO,  GPIO_OUTPUT_OD);
       // Should I enter DB and DBP once?
-      SCSI_DB_INPUT()
+      SCSI_DB_INPUT();
 
       LOGN("BusReset!");
       m_isBusReset = true;
@@ -668,12 +624,12 @@ void onBusReset(void)
  */
 inline byte readHandshake(void)
 {
-  SCSI_OUT(vREQ,active)
-  //SCSI_DB_INPUT()
-  while( ! SCSI_IN(vACK)) { if(m_isBusReset) return 0; }
+  SCSI_OUT(REQ,true)
+  //SCSI_DB_INPUT();
+  while( ! SCSI_IN(ACK)) { if(m_isBusReset) return 0; }
   byte r = readIO();
-  SCSI_OUT(vREQ,inactive)
-  while( SCSI_IN(vACK)) { if(m_isBusReset) return 0; }
+  SCSI_OUT(REQ, false);
+  while( SCSI_IN(ACK)) { if(m_isBusReset) return 0; }
   return r;  
 }
 
@@ -682,20 +638,24 @@ inline byte readHandshake(void)
  */
 inline void writeHandshake(byte d)
 {
-  GPIOB->regs->BSRR = db_bsrr[d]; // setup DB,DBP (160ns)
-  SCSI_DB_OUTPUT() // (180ns)
-  // ACK.Fall to DB output delay 100ns(MAX)  (DTC-510B)
-  SCSI_OUT(vREQ,inactive) // setup wait (30ns)
-  SCSI_OUT(vREQ,inactive) // setup wait (30ns)
-  SCSI_OUT(vREQ,inactive) // setup wait (30ns)
-  SCSI_OUT(vREQ,active)   // (30ns)
-  //while(!SCSI_IN(vACK)) { if(m_isBusReset){ SCSI_DB_INPUT() return; }}
-  while(!m_isBusReset && !SCSI_IN(vACK));
+  SCSI_DB_OUTPUT(); // (180ns)
+  GPIOB_PDDR = db_bsrr[d];
+  GPIOB_PDOR = db_bsrr[d] ^ SCSI_DB_MASK; // setup DB,DBP (160ns)
+  SCSI_OUT(REQ, false);  // ACK.Fall to DB output delay 100ns(MAX)  (DTC-510B)
+
+  SCSI_OUT(REQ, false); // setup wait (30ns)
+  SCSI_OUT(REQ, false); // setup wait (30ns)
+  SCSI_OUT(REQ, false); // setup wait (30ns)
+  SCSI_OUT(REQ, true);   // (30ns)
+  //while(!SCSI_IN(ACK)) { if(m_isBusReset){ SCSI_DB_INPUT() return; }}
+  while(!m_isBusReset && !SCSI_IN(ACK));
   // ACK.Fall to REQ.Raise delay 500ns(typ.) (DTC-510B)
-  GPIOB->regs->BSRR = DBP(0xff);  // DB=0xFF , SCSI_OUT(vREQ,inactive)
+  GPIOB_PDDR = DBP(0xff);
+  GPIOB_PDOR = DBP(0xff) ^ SCSI_DB_MASK;  // DB=0xFF
+  SCSI_OUT(REQ, false);
   // REQ.Raise to DB hold time 0ns
-  SCSI_DB_INPUT() // (150ns)
-  while( SCSI_IN(vACK)) { if(m_isBusReset) return; }
+  SCSI_DB_INPUT(); // (150ns)
+  while( SCSI_IN(ACK)) { if(m_isBusReset) return; }
 }
 
 /*
@@ -705,9 +665,9 @@ inline void writeHandshake(byte d)
 void writeDataPhase(int len, const byte* p)
 {
   LOGN("DATAIN PHASE");
-  SCSI_OUT(vMSG,inactive) //  gpio_write(MSG, low);
-  SCSI_OUT(vCD ,inactive) //  gpio_write(CD, low);
-  SCSI_OUT(vIO ,  active) //  gpio_write(IO, high);
+  SCSI_OUT(MSG, false); //  gpio_write(MSG, low);
+  SCSI_OUT(CD , false); //  gpio_write(CD, low);
+  SCSI_OUT(IO , true); //  gpio_write(IO, high);
   for (int i = 0; i < len; i++) {
     if(m_isBusReset) {
       return;
@@ -726,9 +686,9 @@ void writeDataPhaseSD(uint32_t adds, uint32_t len)
   uint32_t pos = adds * m_img->m_blocksize;
   m_img->m_file.seek(pos);
 
-  SCSI_OUT(vMSG,inactive) //  gpio_write(MSG, low);
-  SCSI_OUT(vCD ,inactive) //  gpio_write(CD, low);
-  SCSI_OUT(vIO ,  active) //  gpio_write(IO, high);
+  SCSI_OUT(MSG, false); //  gpio_write(MSG, low);
+  SCSI_OUT(CD , false); //  gpio_write(CD, low);
+  SCSI_OUT(IO , true); //  gpio_write(IO, high);
 
   for(uint32_t i = 0; i < len; i++) {
       // Asynchronous reads will make it faster ...
@@ -736,22 +696,20 @@ void writeDataPhaseSD(uint32_t adds, uint32_t len)
 
 #if READ_SPEED_OPTIMIZE
 
-//#define REQ_ON() SCSI_OUT(vREQ,active)
-#define REQ_ON() (*db_dst = BITMASK(vREQ)<<16)
+#define REQ_ON() SCSI_OUT(REQ, true);
 #define FETCH_SRC()   (src_byte = *srcptr++)
 #define FETCH_BSRR_DB() (bsrr_val = bsrr_tbl[src_byte])
-#define REQ_OFF_DB_SET(BSRR_VAL) *db_dst = BSRR_VAL
-#define WAIT_ACK_ACTIVE()   while(!m_isBusReset && !SCSI_IN(vACK))
-#define WAIT_ACK_INACTIVE() do{ if(m_isBusReset) return; }while(SCSI_IN(vACK)) 
+#define REQ_OFF_DB_SET(BSRR_VAL) { SCSI_OUT(REQ, false); GPIOB_PDDR = BSRR_VAL; GPIOB_PDOR = BSRR_VAL ^ SCSI_DB_MASK; }
+#define WAIT_ACK_ACTIVE()   while(!m_isBusReset && !SCSI_IN(ACK))
+#define WAIT_ACK_INACTIVE() do{ if(m_isBusReset) return; }while(SCSI_IN(ACK)) 
 
-    SCSI_DB_OUTPUT()
+    SCSI_DB_OUTPUT();
     register byte *srcptr= m_buf;                 // Source buffer
     register byte *endptr= m_buf +  m_img->m_blocksize; // End pointer
 
     /*register*/ byte src_byte;                       // Send data bytes
     register const uint32_t *bsrr_tbl = db_bsrr;  // Table to convert to BSRR
     register uint32_t bsrr_val;                   // BSRR value to output (DB, DBP, REQ = ACTIVE)
-    register volatile uint32_t *db_dst = &(GPIOB->regs->BSRR); // Output port
 
     // prefetch & 1st out
     FETCH_SRC();
@@ -819,9 +777,9 @@ void writeDataPhaseSD(uint32_t adds, uint32_t len)
       REQ_OFF_DB_SET(bsrr_val);
       WAIT_ACK_INACTIVE();
     }while(srcptr < endptr);
-    SCSI_DB_INPUT()
+    SCSI_DB_INPUT();
 #else
-    for(int j = 0; j < m_img->m_blocksize; j++) {
+    for(unsigned int j = 0; j < m_img->m_blocksize; j++) {
       if(m_isBusReset) {
         return;
       }
@@ -838,9 +796,9 @@ void writeDataPhaseSD(uint32_t adds, uint32_t len)
 void readDataPhase(int len, byte* p)
 {
   LOGN("DATAOUT PHASE");
-  SCSI_OUT(vMSG,inactive) //  gpio_write(MSG, low);
-  SCSI_OUT(vCD ,inactive) //  gpio_write(CD, low);
-  SCSI_OUT(vIO ,inactive) //  gpio_write(IO, low);
+  SCSI_OUT(MSG,false); //  gpio_write(MSG, low);
+  SCSI_OUT(CD ,false); //  gpio_write(CD, low);
+  SCSI_OUT(IO ,false); //  gpio_write(IO, low);
   for(uint32_t i = 0; i < len; i++)
     p[i] = readHandshake();
 }
@@ -854,13 +812,13 @@ void readDataPhaseSD(uint32_t adds, uint32_t len)
   LOGN("DATAOUT PHASE(SD)");
   uint32_t pos = adds * m_img->m_blocksize;
   m_img->m_file.seek(pos);
-  SCSI_OUT(vMSG,inactive) //  gpio_write(MSG, low);
-  SCSI_OUT(vCD ,inactive) //  gpio_write(CD, low);
-  SCSI_OUT(vIO ,inactive) //  gpio_write(IO, low);
+  SCSI_OUT(MSG,false); //  gpio_write(MSG, low);
+  SCSI_OUT(CD ,false); //  gpio_write(CD, low);
+  SCSI_OUT(IO ,false); //  gpio_write(IO, low);
   for(uint32_t i = 0; i < len; i++) {
 #if WRITE_SPEED_OPTIMIZE
   register byte *dstptr= m_buf;
-	register byte *endptr= m_buf + m_img->m_blocksize;
+    register byte *endptr= m_buf + m_img->m_blocksize;
 
     for(dstptr=m_buf;dstptr<endptr;dstptr+=8) {
       dstptr[0] = readHandshake();
@@ -906,13 +864,19 @@ byte onInquiryCommand(byte len)
     'A', 'r', 'd', 'S', 'C', 'S', 'i', 'n', 'o', ' ', ' ',' ', ' ', ' ', ' ', ' ',
     '0', '0', '1', '0',
   };
+  if(!m_img) buf[0] = 0x7f;
   writeDataPhase(len < 36 ? len : 36, buf);
   return 0x00;
 }
 #else
 byte onInquiryCommand(byte len)
 {
-  writeDataPhase(len < 36 ? len : 36, SCSI_INFO_BUF);
+  byte buf[36];
+  memcpy(buf, SCSI_INFO_BUF, 36);
+
+  if(!m_img) buf[0] = 0x7f;
+
+  writeDataPhase(len < 36 ? len : 36, buf);
   return 0x00;
 }
 #endif
@@ -930,8 +894,14 @@ void onRequestSenseCommand(byte len)
     17 - 7 ,   //Additional data length
     0,
   };
-  buf[2] = m_senseKey;
-  m_senseKey = 0;
+  if(!m_img) {
+    // Image file absent
+    buf[2] = 0x02; // NOT_READY
+    buf[12] = 0x25; // Logical Unit Not Supported
+  } else {
+    buf[2] = m_senseKey;
+    m_senseKey = 0;
+  }
   writeDataPhase(len < 18 ? len : 18, buf);  
 }
 
@@ -1186,9 +1156,9 @@ static byte dtc510b_setDriveparameter(void)
 void MsgIn2(int msg)
 {
   LOGN("MsgIn2");
-  SCSI_OUT(vMSG,  active) //  gpio_write(MSG, high);
-  SCSI_OUT(vCD ,  active) //  gpio_write(CD, high);
-  SCSI_OUT(vIO ,  active) //  gpio_write(IO, high);
+  SCSI_OUT(MSG, true); //  gpio_write(MSG, high);
+  SCSI_OUT(CD , true); //  gpio_write(CD, high);
+  SCSI_OUT(IO , true); //  gpio_write(IO, high);
   writeHandshake(msg);
 }
 
@@ -1198,9 +1168,9 @@ void MsgIn2(int msg)
 void MsgOut2()
 {
   LOGN("MsgOut2");
-  SCSI_OUT(vMSG,  active) //  gpio_write(MSG, high);
-  SCSI_OUT(vCD ,  active) //  gpio_write(CD, high);
-  SCSI_OUT(vIO ,inactive) //  gpio_write(IO, low);
+  SCSI_OUT(MSG, true); //  gpio_write(MSG, high);
+  SCSI_OUT(CD , true); //  gpio_write(CD, high);
+  SCSI_OUT(IO , false); //  gpio_write(IO, low);
   m_msb[m_msc] = readHandshake();
   m_msc++;
   m_msc %= 256;
@@ -1213,9 +1183,10 @@ void loop()
 {
   //int msg = 0;
   m_msg = 0;
+  m_lun = 0xff;
 
   // Wait until RST = H, BSY = H, SEL = L
-  do {} while( SCSI_IN(vBSY) || !SCSI_IN(vSEL) || SCSI_IN(vRST));
+  do {} while( SCSI_IN(BSY) || !SCSI_IN(SEL) || SCSI_IN(RST));
 
   // BSY+ SEL-
   // If the ID to respond is not driven, wait for the next
@@ -1240,22 +1211,22 @@ void loop()
   //if(m_id<0) return;
 #endif
 
-  // Wait until SEL becomes inactive
-  while(isHigh(gpio_read(SEL)) && isLow(gpio_read(BSY))) {
+  // Wait until SEL becomes false
+  while(!digitalRead(SEL) && digitalRead(BSY)) {
     if(m_isBusReset) {
       goto BusFree;
     }
   }
   SCSI_TARGET_ACTIVE()  // (BSY), REQ, MSG, CD, IO output turned on
   //  
-  if(isHigh(gpio_read(ATN))) {
+  if(!digitalRead(ATN)) {
     bool syncenable = false;
     int syncperiod = 50;
     int syncoffset = 0;
     int loopWait = 0;
     m_msc = 0;
     memset(m_msb, 0x00, sizeof(m_msb));
-    while(isHigh(gpio_read(ATN)) && loopWait < 255) {
+    while(!digitalRead(ATN) && loopWait < 255) {
       MsgOut2();
       loopWait++;
     }
@@ -1271,6 +1242,7 @@ void loop()
       }
       // IDENTIFY
       if (m_msb[i] >= 0x80) {
+        m_lun = m_msb[i] & 0x07;
       }
       // Extended message
       if (m_msb[i] == 0x01) {
@@ -1301,9 +1273,9 @@ void loop()
   }
 
   LOG("Command:");
-  SCSI_OUT(vMSG,inactive) // gpio_write(MSG, low);
-  SCSI_OUT(vCD ,  active) // gpio_write(CD, high);
-  SCSI_OUT(vIO ,inactive) // gpio_write(IO, low);
+  SCSI_OUT(MSG, false); // gpio_write(MSG, low);
+  SCSI_OUT(CD , true); // gpio_write(CD, high);
+  SCSI_OUT(IO , false); // gpio_write(IO, low);
   
   int len;
   byte cmd[12];
@@ -1326,7 +1298,7 @@ void loop()
   }
   // LUN confirmation
   m_sts = cmd[1]&0xe0;      // Preset LUN in status byte
-  m_lun = m_sts>>5;
+  if(m_lun == 0xff) m_lun = m_sts>>5;
   // HDD Image selection
   m_img = (HDDIMG *)0; // None
   if( (m_lun <= NUM_SCSILUN) )
@@ -1335,7 +1307,6 @@ void loop()
     if(!(m_img->m_file.isOpen()))
       m_img = (HDDIMG *)0;       // Image absent
   }
-  // if(!m_img) m_sts |= 0x02;            // Missing image file for LUN
   //LOGHEX(((uint32_t)m_img));
   
   LOG(":ID ");
@@ -1344,108 +1315,126 @@ void loop()
   LOG(m_lun);
 
   LOGN("");
-  switch(cmd[0]) {
-  case 0x00:
-    LOGN("[Test Unit]");
-    break;
-  case 0x01:
-    LOGN("[Rezero Unit]");
-    break;
-  case 0x03:
-    LOGN("[RequestSense]");
-    onRequestSenseCommand(cmd[4]);
-    break;
-  case 0x04:
-    LOGN("[FormatUnit]");
-    break;
-  case 0x06:
-    LOGN("[FormatUnit]");
-    break;
-  case 0x07:
-    LOGN("[ReassignBlocks]");
-    break;
-  case 0x08:
-    LOGN("[Read6]");
-    m_sts |= onReadCommand((((uint32_t)cmd[1] & 0x1F) << 16) | ((uint32_t)cmd[2] << 8) | cmd[3], (cmd[4] == 0) ? 0x100 : cmd[4]);
-    break;
-  case 0x0A:
-    LOGN("[Write6]");
-    m_sts |= onWriteCommand((((uint32_t)cmd[1] & 0x1F) << 16) | ((uint32_t)cmd[2] << 8) | cmd[3], (cmd[4] == 0) ? 0x100 : cmd[4]);
-    break;
-  case 0x0B:
-    LOGN("[Seek6]");
-    break;
-  case 0x12:
-    LOGN("[Inquiry]");
-    m_sts |= onInquiryCommand(cmd[4]);
-    break;
-  case 0x1A:
-    LOGN("[ModeSense6]");
-    m_sts |= onModeSenseCommand(cmd[1]&0x80, cmd[2], cmd[4]);
-    break;
-  case 0x1B:
-    LOGN("[StartStopUnit]");
-    break;
-  case 0x1E:
-    LOGN("[PreAllowMed.Removal]");
-    break;
-  case 0x25:
-    LOGN("[ReadCapacity]");
-    m_sts |= onReadCapacityCommand(cmd[8]);
-    break;
-  case 0x28:
-    LOGN("[Read10]");
-    m_sts |= onReadCommand(((uint32_t)cmd[2] << 24) | ((uint32_t)cmd[3] << 16) | ((uint32_t)cmd[4] << 8) | cmd[5], ((uint32_t)cmd[7] << 8) | cmd[8]);
-    break;
-  case 0x2A:
-    LOGN("[Write10]");
-    m_sts |= onWriteCommand(((uint32_t)cmd[2] << 24) | ((uint32_t)cmd[3] << 16) | ((uint32_t)cmd[4] << 8) | cmd[5], ((uint32_t)cmd[7] << 8) | cmd[8]);
-    break;
-  case 0x2B:
-    LOGN("[Seek10]");
-    break;
-  case 0x5A:
-    LOGN("[ModeSense10]");
-    onModeSenseCommand(cmd[1] & 0x80, cmd[2], ((uint32_t)cmd[7] << 8) | cmd[8]);
-    break;
+
+  if(!m_img) {
+    switch(cmd[0]) {
+    case 0x03:
+      LOGN("[RequestSense]");
+      onRequestSenseCommand(cmd[4]);
+      break;
+    case 0x12:
+      LOGN("[Inquiry]");
+      m_sts |= onInquiryCommand(cmd[4]);
+      break;
+    default:
+      LOGN("[Bad LUN]");
+      m_sts |= 0x02;
+      break;
+    }
+  } else {
+    switch(cmd[0]) {
+    case 0x00:
+      LOGN("[Test Unit]");
+      break;
+    case 0x01:
+      LOGN("[Rezero Unit]");
+      break;
+    case 0x03:
+      LOGN("[RequestSense]");
+      onRequestSenseCommand(cmd[4]);
+      break;
+    case 0x04:
+      LOGN("[FormatUnit]");
+      break;
+    case 0x06:
+      LOGN("[FormatUnit]");
+      break;
+    case 0x07:
+      LOGN("[ReassignBlocks]");
+      break;
+    case 0x08:
+      LOGN("[Read6]");
+      m_sts |= onReadCommand((((uint32_t)cmd[1] & 0x1F) << 16) | ((uint32_t)cmd[2] << 8) | cmd[3], (cmd[4] == 0) ? 0x100 : cmd[4]);
+      break;
+    case 0x0A:
+      LOGN("[Write6]");
+      m_sts |= onWriteCommand((((uint32_t)cmd[1] & 0x1F) << 16) | ((uint32_t)cmd[2] << 8) | cmd[3], (cmd[4] == 0) ? 0x100 : cmd[4]);
+      break;
+    case 0x0B:
+      LOGN("[Seek6]");
+      break;
+    case 0x12:
+      LOGN("[Inquiry]");
+      m_sts |= onInquiryCommand(cmd[4]);
+      break;
+    case 0x1A:
+      LOGN("[ModeSense6]");
+      m_sts |= onModeSenseCommand(cmd[1]&0x80, cmd[2], cmd[4]);
+      break;
+    case 0x1B:
+      LOGN("[StartStopUnit]");
+      break;
+    case 0x1E:
+      LOGN("[PreAllowMed.Removal]");
+      break;
+    case 0x25:
+      LOGN("[ReadCapacity]");
+      m_sts |= onReadCapacityCommand(cmd[8]);
+      break;
+    case 0x28:
+      LOGN("[Read10]");
+      m_sts |= onReadCommand(((uint32_t)cmd[2] << 24) | ((uint32_t)cmd[3] << 16) | ((uint32_t)cmd[4] << 8) | cmd[5], ((uint32_t)cmd[7] << 8) | cmd[8]);
+      break;
+    case 0x2A:
+      LOGN("[Write10]");
+      m_sts |= onWriteCommand(((uint32_t)cmd[2] << 24) | ((uint32_t)cmd[3] << 16) | ((uint32_t)cmd[4] << 8) | cmd[5], ((uint32_t)cmd[7] << 8) | cmd[8]);
+      break;
+    case 0x2B:
+      LOGN("[Seek10]");
+      break;
+    case 0x5A:
+      LOGN("[ModeSense10]");
+      onModeSenseCommand(cmd[1] & 0x80, cmd[2], ((uint32_t)cmd[7] << 8) | cmd[8]);
+      break;
 #if SCSI_SELECT == 1
-  case 0xc2:
-    LOGN("[DTC510B setDriveParameter]");
-    m_sts |= dtc510b_setDriveparameter();
-    break;
+    case 0xc2:
+      LOGN("[DTC510B setDriveParameter]");
+      m_sts |= dtc510b_setDriveparameter();
+      break;
 #endif    
-  default:
-    LOGN("[*Unknown]");
-    m_sts |= 0x02;
-    m_senseKey = 5;
-    break;
+    default:
+      LOGN("[*Unknown]");
+      m_sts |= 0x02;
+      m_senseKey = 5;
+      break;
+    }
   }
   if(m_isBusReset) {
      goto BusFree;
   }
 
   LOGN("Sts");
-  SCSI_OUT(vMSG,inactive) // gpio_write(MSG, low);
-  SCSI_OUT(vCD ,  active) // gpio_write(CD, high);
-  SCSI_OUT(vIO ,  active) // gpio_write(IO, high);
+  SCSI_OUT(MSG, false); // gpio_write(MSG, low);
+  SCSI_OUT(CD , true); // gpio_write(CD, high);
+  SCSI_OUT(IO , true); // gpio_write(IO, high);
   writeHandshake(m_sts);
   if(m_isBusReset) {
      goto BusFree;
   }
 
   LOGN("MsgIn");
-  SCSI_OUT(vMSG,  active) // gpio_write(MSG, high);
-  SCSI_OUT(vCD ,  active) // gpio_write(CD, high);
-  SCSI_OUT(vIO ,  active) // gpio_write(IO, high);
+  SCSI_OUT(MSG, true); // gpio_write(MSG, high);
+  SCSI_OUT(CD , true); // gpio_write(CD, high);
+  SCSI_OUT(IO , true); // gpio_write(IO, high);
   writeHandshake(m_msg);
 
 BusFree:
   LOGN("BusFree");
   m_isBusReset = false;
-  //SCSI_OUT(vREQ,inactive) // gpio_write(REQ, low);
-  //SCSI_OUT(vMSG,inactive) // gpio_write(MSG, low);
-  //SCSI_OUT(vCD ,inactive) // gpio_write(CD, low);
-  //SCSI_OUT(vIO ,inactive) // gpio_write(IO, low);
-  //SCSI_OUT(vBSY,inactive)
-  SCSI_TARGET_INACTIVE() // Turn off BSY, REQ, MSG, CD, IO output
+  //SCSI_OUT(REQ,false) // gpio_write(REQ, low);
+  //SCSI_OUT(MSG,false) // gpio_write(MSG, low);
+  //SCSI_OUT(CD ,false) // gpio_write(CD, low);
+  //SCSI_OUT(IO ,false) // gpio_write(IO, low);
+  //SCSI_OUT(BSY,false)
+  SCSI_TARGET_INACTIVE(); // Turn off BSY, REQ, MSG, CD, IO output
 }
