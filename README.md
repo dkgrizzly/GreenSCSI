@@ -1,5 +1,4 @@
-# BlueSCSI
-:toc: macro
+# GreenSCSI
 
 GreenSCSI, BlueSCSI & ArdSCSino are hardware that reproduces SCSI devices (hard disks) with Arduino like devices.
 
