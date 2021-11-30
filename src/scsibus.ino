@@ -51,9 +51,6 @@ const uint8_t db2scsiid[256]={
 
 // Put DB and DP in output mode
 inline void SCSI_DB_OUTPUT(uint8_t d) {
-//  GPIOB_PDDR = db_bsrr[d];
-//  GPIOB_PDOR = db_bsrr[d] ^ SCSI_DB_MASK;
-
   GPIOB_PDOR = db_bsrr[d];
 }
 
@@ -86,33 +83,29 @@ void onBusReset(void)
   m_isBusReset = true;
 }
 
+
 /*
  * Read by handshake.
  */
 inline uint8_t readHandshake(void)
 {
   SET_REQ_ACTIVE();
-  //SCSI_DB_INPUT();
-  while(!m_isBusReset && !GET_ACK());
+  while(!GET_ACK()) { if(m_isBusReset) { return 0; } }
   uint8_t r = readIO();
   SET_REQ_INACTIVE();
-  while(GET_ACK()) { if(m_isBusReset) return 0; }
+  while(GET_ACK()) { if(m_isBusReset) { return 0; } }
   return r;  
 }
 
 inline void readHandshakeBlock(uint8_t *d, uint16_t len)
 {
-  //SCSI_DB_INPUT();
   while(len) {
     SET_REQ_ACTIVE();
-    while(!m_isBusReset && !GET_ACK());
+    while(!GET_ACK()) { if(m_isBusReset) { return 0; } }
     *d++ = readIO();
     len--;
     SET_REQ_INACTIVE();
-    while(GET_ACK()) { 
-      yield();
-      if(m_isBusReset) return;
-    }
+    while(GET_ACK()) { if(m_isBusReset) { return 0; } }
   }
 }
 
@@ -124,17 +117,11 @@ inline void writeHandshake(uint8_t d)
   GPIOB_PDDR = SCSI_DB_MASK;
   SCSI_DB_OUTPUT(d);
 
-  // ACK.Fall to DB output delay 100ns(MAX)  (DTC-510B)
-  SET_REQ_ACTIVE();   // (30ns)
-  while(!m_isBusReset && !GET_ACK());
-  // ACK.Fall to REQ.Raise delay 500ns(typ.) (DTC-510B)
-  GPIOB_PDDR = DBP(0xff);
-  GPIOB_PDOR = DBP(0xff) ^ SCSI_DB_MASK;  // DB=0xFF
+  SET_REQ_ACTIVE();
+  while(!GET_ACK()) { if(m_isBusReset) { return 0; } }
   SET_REQ_INACTIVE();
-
-  // REQ.Raise to DB hold time 0ns
-  SCSI_DB_INPUT(); // (150ns)
-  while( GET_ACK()) { if(m_isBusReset) return; }
+  SCSI_DB_INPUT();
+  while(GET_ACK()) { if(m_isBusReset) { return 0; } }
 }
 
 inline void writeHandshakeBlock(const uint8_t *d, uint16_t len)
@@ -142,15 +129,13 @@ inline void writeHandshakeBlock(const uint8_t *d, uint16_t len)
   GPIOB_PDDR = SCSI_DB_MASK;
   while(len) {
     SCSI_DB_OUTPUT(*d++);
-    SET_REQ_ACTIVE();   // (30ns)
-    while(!GET_ACK());
+    SET_REQ_ACTIVE();
+    while(!GET_ACK()) { if(m_isBusReset) { return 0; } }
     len--;
     SET_REQ_INACTIVE();
-    while( GET_ACK()) {
-      if(m_isBusReset) return;
-    }
+    while(GET_ACK()) { if(m_isBusReset) { return 0; } }
   }
-  SCSI_DB_INPUT(); // (150ns)
+  SCSI_DB_INPUT();
 }
 
 /*
@@ -160,9 +145,9 @@ inline void writeHandshakeBlock(const uint8_t *d, uint16_t len)
 void writeDataPhase(int len, const uint8_t* p)
 {
   //LOGN("DATAIN PHASE");
-  SET_MSG_INACTIVE(); //  gpio_write(MSG, low);
-  SET_CD_INACTIVE();; //  gpio_write(CD, low);
-  SET_IO_ACTIVE();  //  gpio_write(IO, high);
+  SET_MSG_INACTIVE();
+  SET_CD_INACTIVE();
+  SET_IO_ACTIVE();
 
 #if READ_SPEED_OPTIMIZE
   writeHandshakeBlock(p, len);
@@ -195,9 +180,9 @@ void writeDataPhaseSD(uint32_t adds, uint32_t len)
   uint32_t pos = adds * m_sel->m_blocksize;
   m_sel->m_file.seek(pos);
 
-  SET_MSG_INACTIVE(); //  gpio_write(MSG, low);
-  SET_CD_INACTIVE(); //  gpio_write(CD, low);
-  SET_IO_ACTIVE(); //  gpio_write(IO, high);
+  SET_MSG_INACTIVE();
+  SET_CD_INACTIVE();
+  SET_IO_ACTIVE();
 
   while(i < len) {
       // Asynchronous reads will make it faster ...
@@ -236,8 +221,8 @@ void readDataPhase(int len, uint8_t* p)
 {
   //LOGN("DATAOUT PHASE");
   SET_MSG_INACTIVE();
-  SET_CD_INACTIVE();;
-  SET_IO_INACTIVE();;
+  SET_CD_INACTIVE();
+  SET_IO_INACTIVE();
 
 #if WRITE_SPEED_OPTIMIZE
   readHandshakeBlock(p, len);
@@ -265,8 +250,8 @@ void readDataPhaseSD(uint32_t adds, uint32_t len)
   uint32_t pos = adds * m_sel->m_blocksize;
   m_sel->m_file.seek(pos);
   SET_MSG_INACTIVE();
-  SET_CD_INACTIVE();;
-  SET_IO_INACTIVE();;
+  SET_CD_INACTIVE();
+  SET_IO_INACTIVE();
 
   while(i < len) {
 #if WRITE_SPEED_OPTIMIZE

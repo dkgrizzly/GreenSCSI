@@ -6,6 +6,7 @@
                                           // 2: Debug information output to LOG.txt (slow)
 
 #define SYNCHRO                false      // Support Synchronous mode.
+#define ACK_INTERRUPTS         false
 #define READ_SPEED_OPTIMIZE    true       // 
 #define WRITE_SPEED_OPTIMIZE   true       // 
 #define USE_DB2ID_TABLE        true       // Use table to get ID from SEL-DB
