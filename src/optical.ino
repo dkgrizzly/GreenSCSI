@@ -1,4 +1,7 @@
+#include "config.h"
 #include "scsi_defs.h"
+
+#if SUPPORT_OPTICAL
 
 static const uint8_t SessionTOC[] =
 {
@@ -142,140 +145,13 @@ static void LBA2MSF(uint32_t LBA, uint8_t* MSF)
   MSF[1] = (uint32_t)(rem / 60); // M
 }
 
-
-void OpticalModeSense6CommandHandler() {
-  uint8_t len;
-  int page, pagemax, pagemin;
-
-  LOGN("[ModeSense6]");
-  /* Check whether medium is present */
-  if(!m_img) {
-    m_sts |= 0x02;
-    m_phase = PHASE_STATUSIN;
-    return;
-  }
-
-  memset(m_responsebuffer, 0, sizeof(m_responsebuffer));
-
-  len = 1;
-  /* Default medium type */
-  m_responsebuffer[len++] = 0xf0;
-  /* Write protected */
-  m_responsebuffer[len++] = 0x80;
-
-  /* Add block descriptor if DBD is not set */
-  if (m_cmd[1] & 0x08) {
-    m_responsebuffer[len++] = 0;             /* No block descriptor */
-  } else {
-    uint32_t capacity = (m_img->m_fileSize / m_img->m_blocksize) - 1;
-    m_responsebuffer[len++] = 8;             /* Block descriptor length */
-    m_responsebuffer[len++] = (capacity >> 24) & 0xff;
-    m_responsebuffer[len++] = (capacity >> 16) & 0xff;
-    m_responsebuffer[len++] = (capacity >> 8) & 0xff;
-    m_responsebuffer[len++] = capacity & 0xff;
-    m_responsebuffer[len++] = (m_img->m_blocksize >> 24) & 0xff;
-    m_responsebuffer[len++] = (m_img->m_blocksize >> 16) & 0xff;
-    m_responsebuffer[len++] = (m_img->m_blocksize >> 8) & 0xff;
-    m_responsebuffer[len++] = (m_img->m_blocksize) & 0xff;
-  }
-
-  /* Check for requested mode page */
-  page = m_cmd[2] & 0x3F;
-  pagemax = (page != 0x3f) ? page : 0x3e;
-  pagemin = (page != 0x3f) ? page : 0x00;
-  for(page = pagemax; page >= pagemin; page--) {
-    switch (page) {
-      case MODEPAGE_VENDOR_SPECIFIC:
-        /* Accept request only for current values */
-        if (m_cmd[2] & 0xC0) {
-          //DEBUGPRINT(DBG_TRACE, " [2]==%d", m_cmd[2]);
-          /* Prepare sense data */
-          m_sts |= STATUS_CHECK;
-          m_sense[m_id][m_lun].m_key = ILLEGAL_REQUEST;
-          m_sense[m_id][m_lun].m_code = INVALID_FIELD_IN_CDB;    /* "Invalid field in CDB" */
-          m_sense[m_id][m_lun].m_key_specific[0] = ERROR_IN_OPCODE;  /* "Error in Byte 2" */
-          m_sense[m_id][m_lun].m_key_specific[1] = 0x00;
-          m_sense[m_id][m_lun].m_key_specific[2] = 0x02;
-          m_phase = PHASE_STATUSIN;
-          return;
-        }
-
-        /* Unit attention */
-        m_responsebuffer[len++] = 0x80; // PS, page id
-        m_responsebuffer[len++] = 0x02; // Page length
-        m_responsebuffer[len++] = 0x00;
-        m_responsebuffer[len++] = 0x00;
-        break;
-#if 0
-      case MODEPAGE_DCRC_PARAMETERS:
-        m_responsebuffer[len++] = 0x82; // PS, page id
-        m_responsebuffer[len++] = 0x0e; // Page length
-        m_responsebuffer[len++] = 0xe6; // Buffer full ratio, 90%
-        m_responsebuffer[len++] = 0x1a; // Buffer empty ratio, 10%
-        m_responsebuffer[len++] = 0x00; // Bus inactivity limit
-        m_responsebuffer[len++] = 0x00;
-        m_responsebuffer[len++] = 0x00; // Disconnect time limit
-        m_responsebuffer[len++] = 0x00;
-        m_responsebuffer[len++] = 0x00; // Connect time limit
-        m_responsebuffer[len++] = 0x00;
-        m_responsebuffer[len++] = 0x00; // Maximum burst size
-        m_responsebuffer[len++] = 0x00;
-        m_responsebuffer[len++] = 0x00; // EMDP, Dimm, DTDC
-        m_responsebuffer[len++] = 0x00; // Reserved
-        m_responsebuffer[len++] = 0x00; // Reserved
-        m_responsebuffer[len++] = 0x00; // Reserved
-        break;
-#endif
-      case MODEPAGE_RW_ERROR_RECOVERY:
-        m_responsebuffer[len++] = 0x81; // PS, page id
-        m_responsebuffer[len++] = 0x0a; // Page length
-        m_responsebuffer[len++] = 0x07; // 
-        m_responsebuffer[len++] = 0x00; // Read Retry Count
-        m_responsebuffer[len++] = 0x00; // Reserved
-        m_responsebuffer[len++] = 0x00; // Reserved
-        m_responsebuffer[len++] = 0x00; // Reserved
-        m_responsebuffer[len++] = 0x00; // Reserved
-        m_responsebuffer[len++] = 0x00; // Write Retry Count
-        m_responsebuffer[len++] = 0x00; // Reserved
-        m_responsebuffer[len++] = 0x00; // Recovery Time Limit
-        m_responsebuffer[len++] = 0x00;
-        break;
-      default:
-        if(pagemin == pagemax) {
-          /* Requested mode page is not supported */
-          /* Prepare sense data */
-          m_sts |= STATUS_CHECK;
-          m_sense[m_id][m_lun].m_key = ILLEGAL_REQUEST;
-          m_sense[m_id][m_lun].m_code = INVALID_FIELD_IN_CDB;       /* "Invalid field in CDB" */
-          m_sense[m_id][m_lun].m_key_specific[0] = ERROR_IN_OPCODE;  /* "Error in Byte 2" */
-          m_sense[m_id][m_lun].m_key_specific[1] = 0x00;
-          m_sense[m_id][m_lun].m_key_specific[2] = 0x02;
-          m_phase = PHASE_STATUSIN;
-          return;
-        }
-    }
-  }
-
-  /* Report size of requested data */
-  m_responsebuffer[0] = len;
-
-  /* Truncate data if necessary */
-  if (m_cmd[4] < len) {
-    len = m_cmd[4];
-  }
-
-  // Send it
-  writeDataPhase(len, m_responsebuffer);
-  m_phase = PHASE_STATUSIN;
-}
-
 void OpticalReadSimpleTOC()
 {
   int MSF = m_cmd[1] & 0x02 ? 1 : 0;
   uint16_t allocationLength = (m_cmd[7] << 8) | m_cmd[8];
   uint8_t len = 0;
 
-  if(!m_img) {
+  if(!m_sel) {
     m_sts |= 0x02;
     m_phase = PHASE_STATUSIN;
     return;
@@ -283,7 +159,7 @@ void OpticalReadSimpleTOC()
   
   memset(m_responsebuffer, 0, sizeof(m_responsebuffer));
 
-  uint32_t capacity = (m_img->m_fileSize / m_img->m_blocksize) - 1;
+  uint32_t capacity = (m_sel->m_fileSize / m_sel->m_blocksize) - 1;
   m_responsebuffer[len++] = 0x00; // toc length, MSB
   m_responsebuffer[len++] = 0x00; // toc length, LSB
   m_responsebuffer[len++] = 0x01; // First track number
@@ -324,11 +200,11 @@ void OpticalReadSimpleTOC()
       break;
     default:
       m_sts |= STATUS_CHECK;
-      m_sense[m_id][m_lun].m_key = ILLEGAL_REQUEST; // Illegal Request
-      m_sense[m_id][m_lun].m_code = INVALID_FIELD_IN_CDB; // Invalid field in CDB
-      m_sense[m_id][m_lun].m_key_specific[0] = ERROR_IN_OPCODE; // Error in Byte 6
-      m_sense[m_id][m_lun].m_key_specific[1] = 0x00;
-      m_sense[m_id][m_lun].m_key_specific[2] = 0x06;
+      m_sel->m_sense.m_key = ILLEGAL_REQUEST; // Illegal Request
+      m_sel->m_sense.m_code = INVALID_FIELD_IN_CDB; // Invalid field in CDB
+      m_sel->m_sense.m_key_specific[0] = ERROR_IN_OPCODE; // Error in Byte 6
+      m_sel->m_sense.m_key_specific[1] = 0x00;
+      m_sel->m_sense.m_key_specific[2] = 0x06;
       m_phase = PHASE_STATUSIN;
   }
 
@@ -371,11 +247,11 @@ void OpticalReadFullTOC(int convertBCD)
   // We only support session 1.
   if (m_cmd[6] > 1) {
     m_sts |= STATUS_CHECK;
-    m_sense[m_id][m_lun].m_key = ILLEGAL_REQUEST; // Illegal Request
-    m_sense[m_id][m_lun].m_code = INVALID_FIELD_IN_CDB; // Invalid field in CDB
-    m_sense[m_id][m_lun].m_key_specific[0] = ERROR_IN_OPCODE; // Error in Byte 6
-    m_sense[m_id][m_lun].m_key_specific[1] = 0x00;
-    m_sense[m_id][m_lun].m_key_specific[2] = 0x06;
+    m_sel->m_sense.m_key = ILLEGAL_REQUEST; // Illegal Request
+    m_sel->m_sense.m_code = INVALID_FIELD_IN_CDB; // Invalid field in CDB
+    m_sel->m_sense.m_key_specific[0] = ERROR_IN_OPCODE; // Error in Byte 6
+    m_sel->m_sense.m_key_specific[1] = 0x00;
+    m_sel->m_sense.m_key_specific[2] = 0x06;
     m_phase = PHASE_STATUSIN;
     return;
   }
@@ -431,11 +307,11 @@ void OpticalReadTOCCommandHandler()
   }
 
   m_sts |= STATUS_CHECK;
-  m_sense[m_id][m_lun].m_key = ILLEGAL_REQUEST; // Illegal Request
-  m_sense[m_id][m_lun].m_code = INVALID_FIELD_IN_CDB; // Invalid field in CDB
-  m_sense[m_id][m_lun].m_key_specific[0] = ERROR_IN_OPCODE; // Error in Byte 2
-  m_sense[m_id][m_lun].m_key_specific[1] = 0x00;
-  m_sense[m_id][m_lun].m_key_specific[2] = 0x02;
+  m_sel->m_sense.m_key = ILLEGAL_REQUEST; // Illegal Request
+  m_sel->m_sense.m_code = INVALID_FIELD_IN_CDB; // Invalid field in CDB
+  m_sel->m_sense.m_key_specific[0] = ERROR_IN_OPCODE; // Error in Byte 2
+  m_sel->m_sense.m_key_specific[1] = 0x00;
+  m_sel->m_sense.m_key_specific[2] = 0x02;
   m_phase = PHASE_STATUSIN;
 }
 
@@ -473,7 +349,7 @@ void OpticalReadDiscInfoCommandHandler()
 {
   uint16_t allocationLength = (m_cmd[7] << 8) | m_cmd[8];
   uint32_t len = sizeof(DiscInfoBlock);
-  uint32_t capacity = (m_img->m_fileSize / m_img->m_blocksize) - 1;
+  uint32_t capacity = (m_sel->m_fileSize / m_sel->m_blocksize) - 1;
   memcpy(m_responsebuffer, DiscInfoBlock, len);
 
   LOGN("[DiscInfo]");
@@ -504,6 +380,8 @@ void OpticalGetConfigurationCommandHandler()
   uint16_t sfnmax = (allocationLength - 8) / 4;
   uint16_t sfi = 0;
   uint8_t len;
+
+  LOGN("[GetConfiguration]");
 
   memset(m_responsebuffer, 0, sizeof(m_responsebuffer));
 
@@ -558,11 +436,11 @@ void OpticalEventStatusCommandHandler()
 
   if((m_cmd[1] & 1) == 0) {
     m_sts |= STATUS_CHECK;
-    m_sense[m_id][m_lun].m_key = ILLEGAL_REQUEST; // Illegal Request
-    m_sense[m_id][m_lun].m_code = INVALID_FIELD_IN_CDB; // Invalid field in CDB
-    m_sense[m_id][m_lun].m_key_specific[0] = ERROR_IN_OPCODE; // Error in Byte 1
-    m_sense[m_id][m_lun].m_key_specific[1] = 0x00;
-    m_sense[m_id][m_lun].m_key_specific[2] = 0x01;
+    m_sel->m_sense.m_key = ILLEGAL_REQUEST; // Illegal Request
+    m_sel->m_sense.m_code = INVALID_FIELD_IN_CDB; // Invalid field in CDB
+    m_sel->m_sense.m_key_specific[0] = ERROR_IN_OPCODE; // Error in Byte 1
+    m_sel->m_sense.m_key_specific[1] = 0x00;
+    m_sel->m_sense.m_key_specific[2] = 0x01;
     m_phase = PHASE_STATUSIN;
     return;
   }
@@ -587,7 +465,7 @@ void OpticalEventStatusCommandHandler()
           m_responsebuffer[len++] = 0x04; // Media Change Event
           m_responsebuffer[len++] = 0x12; // Supported Event Class
           m_responsebuffer[len++] = 0x00; // No Change
-          m_responsebuffer[len++] = (!m_img) ? 0x00 : 0x02; // Media Present
+          m_responsebuffer[len++] = (!m_sel) ? 0x00 : 0x02; // Media Present
           m_responsebuffer[len++] = 0x00; // Start Slot
           m_responsebuffer[len++] = 0x00; // End Slot
           break;
@@ -617,14 +495,14 @@ void OpticalLockTrayCommandHandler() {
 
 void OpticalReadCapacityCommandHandler() {
   LOGN("[ReadCapacity]");
-  if(!m_img) {
+  if(!m_sel) {
     m_sts |= 0x02; // Image file absent
     m_phase = PHASE_STATUSIN;
     return;
   }
 
-  uint32_t bl = m_img->m_blocksize;
-  uint32_t bc = m_img->m_fileSize / bl;
+  uint32_t bl = m_sel->m_blocksize;
+  uint32_t bc = m_sel->m_fileSize / bl;
   uint8_t buf[8] = {
     (uint8_t)(((uint32_t)(bc >> 24))&0xff), (uint8_t)(((uint32_t)(bc >> 16))&0xff), (uint8_t)(((uint32_t)(bc >> 8))&0xff), (uint8_t)(((uint32_t)(bc))&0xff),
     (uint8_t)(((uint32_t)(bl >> 24))&0xff), (uint8_t)(((uint32_t)(bl >> 16))&0xff), (uint8_t)(((uint32_t)(bl >> 8))&0xff), (uint8_t)(((uint32_t)(bl))&0xff)
@@ -633,28 +511,75 @@ void OpticalReadCapacityCommandHandler() {
   m_phase = PHASE_STATUSIN;
 }
 
-void ConfigureOpticalHandlers(int id) {
+void ConfigureOpticalHandlers(VirtualDevice_t *vdev) {
   for(int c = 0; c < 256; c++)
-    m_handler[id][c] = &UnknownCommandHandler;
+    vdev->m_handler[c] = &UnknownCommandHandler;
 
-  m_handler[id][CMD_TEST_UNIT_READY]               = &TestUnitCommandHandler;
-  m_handler[id][CMD_REZERO_UNIT]                   = &RezeroUnitCommandHandler;
-  m_handler[id][CMD_REQUEST_SENSE]                 = &RequestSenseCommandHandler;
-  m_handler[id][CMD_READ6]                         = &Read6CommandHandler;
-  m_handler[id][CMD_SEEK6]                         = &Seek6CommandHandler;
-  m_handler[id][CMD_INQUIRY]                       = &InquiryCommandHandler;
-  m_handler[id][CMD_MODE_SELECT6]                  = &ModeSelect6CommandHandler;
-  m_handler[id][CMD_MODE_SENSE6]                   = &OpticalModeSense6CommandHandler;
-  m_handler[id][CMD_START_STOP_UNIT]               = &StartStopUnitCommandHandler;
-  m_handler[id][CMD_PREVENT_REMOVAL]               = &OpticalLockTrayCommandHandler;
-  m_handler[id][CMD_READ_CAPACITY10]               = &OpticalReadCapacityCommandHandler;
-  m_handler[id][CMD_READ10]                        = &Read10CommandHandler;
-  m_handler[id][CMD_SEEK10]                        = &Seek10CommandHandler;
-  m_handler[id][CMD_READ_TOC]                      = &OpticalReadTOCCommandHandler;
-  m_handler[id][CMD_READ_HEADER]                   = &OpticalHeaderCommandHandler;
-  m_handler[id][CMD_GET_CONFIGURATION]             = &OpticalGetConfigurationCommandHandler;
-  m_handler[id][CMD_GET_EVENT_STATUS_NOTIFICATION] = &OpticalEventStatusCommandHandler;
-  m_handler[id][CMD_READ_DISC_INFORMATION]         = &OpticalReadDiscInfoCommandHandler;
-  m_handler[id][CMD_MODE_SELECT10]                 = &ModeSelect10CommandHandler;
-  m_handler[id][CMD_MODE_SENSE10]                  = &ModeSense10CommandHandler;
+  vdev->m_handler[CMD_TEST_UNIT_READY]               = &TestUnitCommandHandler;
+  vdev->m_handler[CMD_REZERO_UNIT]                   = &RezeroUnitCommandHandler;
+  vdev->m_handler[CMD_REQUEST_SENSE]                 = &RequestSenseCommandHandler;
+  vdev->m_handler[CMD_READ6]                         = &Read6CommandHandler;
+  vdev->m_handler[CMD_SEEK6]                         = &Seek6CommandHandler;
+  vdev->m_handler[CMD_INQUIRY]                       = &InquiryCommandHandler;
+  vdev->m_handler[CMD_MODE_SELECT6]                  = &ModeSelect6CommandHandler;
+  vdev->m_handler[CMD_MODE_SENSE6]                   = &ModeSenseCommandHandler;
+  vdev->m_handler[CMD_START_STOP_UNIT]               = &StartStopUnitCommandHandler;
+  vdev->m_handler[CMD_PREVENT_REMOVAL]               = &OpticalLockTrayCommandHandler;
+  vdev->m_handler[CMD_READ_CAPACITY10]               = &OpticalReadCapacityCommandHandler;
+  vdev->m_handler[CMD_READ10]                        = &Read10CommandHandler;
+  vdev->m_handler[CMD_SEEK10]                        = &Seek10CommandHandler;
+  vdev->m_handler[CMD_READ_TOC]                      = &OpticalReadTOCCommandHandler;
+  vdev->m_handler[CMD_READ_HEADER]                   = &OpticalHeaderCommandHandler;
+  vdev->m_handler[CMD_GET_CONFIGURATION]             = &OpticalGetConfigurationCommandHandler;
+  vdev->m_handler[CMD_GET_EVENT_STATUS_NOTIFICATION] = &OpticalEventStatusCommandHandler;
+  vdev->m_handler[CMD_READ_DISC_INFORMATION]         = &OpticalReadDiscInfoCommandHandler;
+  vdev->m_handler[CMD_MODE_SELECT10]                 = &ModeSelect10CommandHandler;
+  vdev->m_handler[CMD_MODE_SENSE10]                  = &ModeSenseCommandHandler;
 }
+
+// If config file exists, read the first three lines and copy the contents.
+// File must be well formed or you will get junk in the SCSI Vendor fields.
+void ConfigureOptical(VirtualDevice_t *vdev, const char *image_name) {
+  memcpy(vdev->m_inquiryresponse, SCSI_CDROM_INQUIRY_RESPONSE, sizeof(SCSI_CDROM_INQUIRY_RESPONSE));
+
+  if(image_name) {
+    char configname[MAX_FILE_PATH+1];
+    memcpy(configname, image_name, MAX_FILE_PATH+1);
+    char *psuffix = strstr(configname, ".img");
+    if(psuffix) {
+      strcpy(psuffix, ".cfg");
+    } else {
+      sprintf(configname, "cd%d%d.cfg", vdev->m_id, vdev->m_lun);
+    }
+  
+    FsFile config_file = sd.open(configname, O_RDONLY);
+    if (config_file.isOpen()) {
+      char vendor[9];
+      memset(vendor, 0, sizeof(vendor));
+      config_file.readBytes(vendor, sizeof(vendor));
+      LOGN("SCSI VENDOR: ");
+      LOGN(vendor);
+      memcpy(&(vdev->m_inquiryresponse[8]), vendor, 8);
+    
+      char product[17];
+      memset(product, 0, sizeof(product));
+      config_file.readBytes(product, sizeof(product));
+      LOGN("SCSI PRODUCT: ");
+      LOGN(product);
+      memcpy(&(vdev->m_inquiryresponse[16]), product, 16);
+    
+      char version[5];
+      memset(version, 0, sizeof(version));
+      config_file.readBytes(version, sizeof(version));
+      LOGN("SCSI VERSION: ");
+      LOGN(version);
+      memcpy(&(vdev->m_inquiryresponse[32]), version, 4);
+      config_file.close();
+    }
+  }
+
+  vdev->m_type = DEV_OPTICAL;
+  ConfigureOpticalHandlers(vdev);
+}
+
+#endif

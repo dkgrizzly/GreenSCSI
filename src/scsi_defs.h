@@ -1,3 +1,5 @@
+#ifndef __SCSI_DEFS_H
+#define __SCSI_DEFS_H
 
 /* Mode pages */
 #define MODEPAGE_VENDOR_SPECIFIC    0x00
@@ -14,6 +16,8 @@
 #define CMD_REQUEST_SENSE         0x03
 #define CMD_FORMAT_UNIT           0x04
 #define CMD_READ_BLOCK_LIMITS     0x05
+#define CMD_FORMAT_UNIT_ALT       0x06
+#define CMD_REASSIGN_BLOCKS       0x07
 #define CMD_READ6                 0x08
 #define CMD_WRITE6                0x0A  /* Optional */
 #define CMD_SEEK6                 0x0B  /* Optional */
@@ -39,6 +43,7 @@
 #define CMD_WRITEANDVERIFY10      0x2E  /* Optional */
 #define CMD_VERIFY10              0x2F
 #define CMD_PREFETCH_CACHE10      0x34  /* Optional */
+#define CMD_READPOSITION10        0x34  /* Optional */
 #define CMD_SYNCHRONIZE_CACHE10   0x35  /* Optional */
 #define CMD_LOCKUNLOCK_CACHE10    0x36  /* Optional */
 #define CMD_READ_DEFECT_DATA      0x37  /* Optional */
@@ -57,6 +62,7 @@
 #define CMD_MODE_SENSE10          0x5A  /* Optional */
 /* 12 Byte command opcodes */
 #define CMD_REPORT_LUNS           0xA0  /* Optional */
+#define CMD_SET_DRIVE_PARAMETER   0xC2
 #define CMD_MAC_UNKNOWN           0xEE  /* Unknown */
 
 /* Dayna SCSI/Link Ethernet */
@@ -81,11 +87,16 @@
 #define CMD_CABLETRON_LOAD_IMAGE   0x0d09
 #define CMD_CABLETRON_SET_ADDR     0x0d0a
 
+/*
+ *  SCSI DEVICE CODES
+ */
+#define DEV_DISK            0x00
+#define DEV_TAPE            0x01
+#define DEV_OPTICAL         0x05
 
 /*
  *  SCSI MESSAGE CODES
  */
-
 #define COMMAND_COMPLETE    0x00
 #define EXTENDED_MESSAGE    0x01
 #define     EXTENDED_MODIFY_DATA_POINTER    0x00
@@ -149,3 +160,9 @@
 #define UNIT_POWERON_RESET   0x29
 #define NO_MEDIA             0x3A
 #define ERROR_IN_OPCODE      0xC0
+
+#if USE_DB2ID_TABLE
+extern const uint8_t db2scsiid[256];
+#endif
+
+#endif
