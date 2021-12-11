@@ -113,17 +113,17 @@ SdFs sd;
 
 #define SET_REQ_ACTIVE()    { GPIOA_PCOR = (1 << 13); }
 #define SET_REQ_INACTIVE()  { GPIOA_PSOR = (1 << 13); }
-#define SET_MSG_ACTIVE()    { GPIOD_PCOR = (1 << 2); }
-#define SET_MSG_INACTIVE()  { GPIOD_PSOR = (1 << 2); }
-//#define SET_CD_ACTIVE()     { GPIOD_PCOR = (1 << 7); }
-//#define SET_CD_INACTIVE()   { GPIOD_PSOR = (1 << 7); }
-//#define SET_IO_ACTIVE()     { GPIOA_PCOR = (1 << 12); }
-//#define SET_IO_INACTIVE()   { GPIOA_PSOR = (1 << 12); }
+//#define SET_MSG_ACTIVE()    { GPIOD_PCOR = (1 << 2); __asm__("nop""\n\t""nop""\n\t"); }
+//#define SET_MSG_INACTIVE()  { GPIOD_PSOR = (1 << 2); __asm__("nop""\n\t""nop""\n\t"); }
+//#define SET_CD_ACTIVE()     { GPIOD_PCOR = (1 << 7); __asm__("nop""\n\t""nop""\n\t"); }
+//#define SET_CD_INACTIVE()   { GPIOD_PSOR = (1 << 7); __asm__("nop""\n\t""nop""\n\t"); }
+//#define SET_IO_ACTIVE()     { GPIOA_PCOR = (1 << 12); __asm__("nop""\n\t""nop""\n\t"); }
+//#define SET_IO_INACTIVE()   { GPIOA_PSOR = (1 << 12); __asm__("nop""\n\t""nop""\n\t"); }
 
 //#define SET_REQ_ACTIVE()     { pinMode(REQ, OUTPUT_OPENDRAIN);  digitalWrite(REQ, LOW); }
 //#define SET_REQ_INACTIVE()   { digitalWrite(REQ, HIGH); pinMode(REQ, INPUT); }
-//#define SET_MSG_ACTIVE()     { pinMode(MSG, OUTPUT_OPENDRAIN); digitalWrite(MSG, LOW); }
-//#define SET_MSG_INACTIVE()   { digitalWrite(MSG, HIGH); pinMode(MSG, INPUT); }
+#define SET_MSG_ACTIVE()     { pinMode(MSG, OUTPUT_OPENDRAIN); digitalWrite(MSG, LOW); }
+#define SET_MSG_INACTIVE()   { digitalWrite(MSG, HIGH); pinMode(MSG, INPUT); }
 #define SET_CD_ACTIVE()     { pinMode(CD, OUTPUT_OPENDRAIN);  digitalWrite(CD, LOW); }
 #define SET_CD_INACTIVE()   { digitalWrite(CD, HIGH); pinMode(CD, INPUT); }
 #define SET_IO_ACTIVE()     { pinMode(IO, OUTPUT_OPENDRAIN); digitalWrite(IO, LOW); }
@@ -131,7 +131,7 @@ SdFs sd;
 //#define SET_BSY_ACTIVE()     { pinMode(BSY, OUTPUT_OPENDRAIN); digitalWrite(BSY, LOW); }
 //#define SET_BSY_INACTIVE()   { digitalWrite(BSY, HIGH); pinMode(BSY, INPUT); }
 
-#define SET_BSY_ACTIVE()   { GPIOC_PCOR = (1 << 4); }
+#define SET_BSY_ACTIVE()   { GPIOC_PCOR = (1 << 4); __asm__("nop""\n\t"); }
 #define SET_BSY_INACTIVE() { GPIOC_PSOR = (1 << 4); }
 
 #define GET_ACK() (!(GPIOC_PDIR & (1 << 3)))
@@ -140,11 +140,31 @@ SdFs sd;
 #define GET_RST() (!(GPIOD_PDIR & (1 << 3)))
 #define GET_SEL() (!(GPIOD_PDIR & (1 << 4)))
 
+// Initiator Mode
+#define SET_ACK_ACTIVE()   { GPIOC_PCOR = (1 << 3); __asm__("nop""\n\t"); }
+#define SET_ACK_INACTIVE() { GPIOC_PSOR = (1 << 3); }
+#define SET_ATN_ACTIVE()   { GPIOC_PCOR = (1 << 7); __asm__("nop""\n\t"); }
+#define SET_ATN_INACTIVE() { GPIOC_PSOR = (1 << 7); }
+#define SET_RST_ACTIVE()   { GPIOD_PCOR = (1 << 3); __asm__("nop""\n\t"); }
+#define SET_RST_INACTIVE() { GPIOD_PSOR = (1 << 3); }
+#define SET_SEL_ACTIVE()   { GPIOD_PCOR = (1 << 4); __asm__("nop""\n\t"); }
+#define SET_SEL_INACTIVE() { GPIOD_PSOR = (1 << 4); }
+
+#define GET_MSG() (!(GPIOD_PDIR & (1 << 2)))
+#define GET_CD()  (!(GPIOD_PDIR & (1 << 7)))
+#define GET_IO()  (!(GPIOA_PDIR & (1 << 12)))
+#define GET_REQ() (!(GPIOA_PDIR & (1 << 13)))
+
 // Turn on the output only for BSY
 // BSY,REQ,MSG,CD,IO Turn on the output (no change required for OD)
 #define SCSI_TARGET_ACTIVE()   { }
 // BSY,REQ,MSG,CD,IO Turn off output
 #define SCSI_TARGET_INACTIVE() { SCSI_DB_INPUT(); SET_REQ_INACTIVE(); SET_MSG_INACTIVE(); SET_CD_INACTIVE(); SET_IO_INACTIVE(); SET_BSY_INACTIVE(); }
+
+#define SCSI_INITIATOR_INACTIVE() { SCSI_DB_INPUT(); SET_SEL_INACTIVE(); SET_ACK_INACTIVE(); SET_ATN_INACTIVE(); SET_RST_INACTIVE(); }
+
+#define SCSI_DB_MASK 0x00ff0800
+
 
 // HDImage file
 #define HDIMG_ID_POS  2                 // Position to embed ID number
@@ -175,9 +195,10 @@ typedef struct VirtualDevice_s
 #if SUPPORT_TAPE
   size_t      m_filemarks;            // Tape position counter (file marks since BOM)
 #endif
-  uint8_t     m_inquiryresponse[96];
+  uint8_t     m_inquiryresponse[SCSI_INQUIRY_RESPONSE_SIZE];
   CommandHandler_t m_handler[256];
   msense_t    m_sense;
+  uint16_t    m_quirks;
 } VirtualDevice_t;
 
 VirtualDevice_t  m_vdev[NUM_VDEV];    // Maximum number
@@ -198,10 +219,7 @@ uint8_t       m_msb[256];             // Command storage uint8_ts
 uint8_t       m_cmdlen;
 uint8_t       m_cmd[12];
 uint8_t       m_responsebuffer[256];
-#if SUPPORT_SASI
-boolean       m_sasi_mode = SUPPORT_SASI_DEFAULT;
-#endif
-
+uint16_t      default_quirks = (SUPPORT_SASI_DEFAULT ? QUIRKS_SASI : 0) | (SUPPORT_APPLE_DEFAULT ? QUIRKS_APPLE : 0);
 uint16_t ledbits = 0;
 uint8_t ledbit = 0;
 
@@ -216,7 +234,7 @@ typedef enum {
 phase_t       m_phase = PHASE_BUSFREE;
 
 // Log File
-#define VERSION "1.2-20211126"
+#define VERSION "1.2-20211204"
 #if DEBUG == 2
 #define LOG_FILENAME "LOG.txt"
 FsFile LOG_FILE;
@@ -377,9 +395,6 @@ void setup()
   pinModeFastSlew(DB7, OUTPUT_OPENDRAIN);
   pinModeFastSlew(DB8, OUTPUT_OPENDRAIN);
 
-  // DB and DP are input modes
-  SCSI_DB_INPUT();
-
   // Turn off the output port
   SCSI_TARGET_INACTIVE();
 
@@ -404,8 +419,10 @@ void setup()
   scsi_id_mask = 0x00;
 
   // If greenscsi.cfg exists, run it
-  if(sd.exists("/greenscsi.cfg"))
-    execHandler((char*)"/sd/greenscsi.cfg");
+  if(sd.exists("/greenscsi.cfg")) {
+    execscript((char*)"/sd/greenscsi.cfg");
+    execLoop();
+  }
 
   // Scan for images if we haven't defined any targets yet.
   if(m_vdevcnt == 0) findImages();
@@ -435,7 +452,7 @@ void findImages() {
 #if SUPPORT_DISK or SUPPORT_OPTICAL
       if((file_name.startsWith("hd") || file_name.startsWith("cd")) && (file_name.endsWith(".img") || file_name.endsWith(".hda"))) {
         // Defaults for Hard Disks and CD-ROMs
-        int id  = 1; // 0 and 3 are common in Macs for physical HD and CD, so avoid them.
+        int id  = -1; // 0 and 3 are common in Macs for physical HD and CD, so avoid them.
         int lun = 0;
         int blk = 512;
 
@@ -447,15 +464,16 @@ void findImages() {
 
           if(tmp_id > -1 && tmp_id < NUM_SCSIID) {
             id = tmp_id; // If valid id, set it, else use default
+            if(file_name_length > 3) { // HD0[N]
+              int tmp_lun = file_name[HDIMG_LUN_POS] - '0';
+    
+              if(tmp_lun > -1 && tmp_lun < NUM_SCSILUN) {
+                lun = tmp_lun; // If valid id, set it, else use default
+              }
+            }
           } else {
-            usedDefaultId++;
-          }
-        }
-        if(file_name_length > 3) { // HD0[N]
-          int tmp_lun = file_name[HDIMG_LUN_POS] - '0';
-
-          if(tmp_lun > -1 && tmp_lun < NUM_SCSILUN) {
-            lun = tmp_lun; // If valid id, set it, else use default
+            id = ++usedDefaultId;
+            lun = 0;
           }
         }
 

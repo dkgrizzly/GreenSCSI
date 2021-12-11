@@ -76,6 +76,13 @@ void ReassignBlocksCommandHandler() {
   m_phase = PHASE_STATUSIN;
 }
 
+#if SUPPORT_APPLE
+void AppleEECommandHandler() {
+  LOGN("[Apple:0xEE]");
+  m_phase = PHASE_STATUSIN;
+}
+#endif
+
 /*
  * MODE SENSE command processing.
  */
@@ -110,7 +117,7 @@ void ModeSenseCommandHandler()
 
   memset(m_responsebuffer, 0, sizeof(m_responsebuffer));
 #if 0
-  if(m_sasi_mode) {
+  if(m_sel->m_quirks & QUIRKS_SASI) {
     int pageCode = cmd2 & 0x3F;
   
     // Assuming sector size 512, number of sectors 25, number of heads 8 as default settings
@@ -298,7 +305,37 @@ void ModeSenseCommandHandler()
           m_responsebuffer[len++] = 0x00; // Reserved
           break;
 #endif
-        case MODEPAGE_FORMAT_PARAMETERS:
+#if SUPPORT_APPLE
+      case MODEPAGE_APPLE:
+        if( m_sel->m_quirks & QUIRKS_APPLE) {
+          m_responsebuffer[len++] = 0xb0;
+          m_responsebuffer[len++] = 0x16;
+          m_responsebuffer[len++] = 'A';
+          m_responsebuffer[len++] = 'P';
+          m_responsebuffer[len++] = 'P';
+          m_responsebuffer[len++] = 'L';
+          m_responsebuffer[len++] = 'E';
+          m_responsebuffer[len++] = ' ';
+          m_responsebuffer[len++] = 'C';
+          m_responsebuffer[len++] = 'O';
+          m_responsebuffer[len++] = 'M';
+          m_responsebuffer[len++] = 'P';
+          m_responsebuffer[len++] = 'U';
+          m_responsebuffer[len++] = 'T';
+          m_responsebuffer[len++] = 'E';
+          m_responsebuffer[len++] = 'R';
+          m_responsebuffer[len++] = ',';
+          m_responsebuffer[len++] = ' ';
+          m_responsebuffer[len++] = 'I';
+          m_responsebuffer[len++] = 'N';
+          m_responsebuffer[len++] = 'C';
+          m_responsebuffer[len++] = ' ';
+          m_responsebuffer[len++] = ' ';
+          m_responsebuffer[len++] = ' ';
+        }
+        break;
+#endif
+      case MODEPAGE_FORMAT_PARAMETERS:
           m_responsebuffer[len + 0] = MODEPAGE_FORMAT_PARAMETERS; //Page code
           m_responsebuffer[len + 1] = 0x16; // Page length
           m_responsebuffer[len + 11] = 0x3F;//Number of sectors / track
@@ -382,6 +419,22 @@ void ModeSelect10CommandHandler() {
   }
   LOGN("");
 //  m_sts |= onModeSelectCommand();
+  m_phase = PHASE_STATUSIN;
+}
+
+void SearchDataEqualCommandHandler() {
+  LOGN("[SearchDataEqual]");
+  m_phase = PHASE_STATUSIN;
+}
+
+void ReadDefectCommandHandler() {
+  LOGN("[ReadDefect]");
+  m_responsebuffer[0] = 0x00;
+  m_responsebuffer[1] = m_cmd[2];
+  m_responsebuffer[2] = 0x00; // List Length MSB
+  m_responsebuffer[3] = 0x00; // List Length LSB
+  writeDataPhase(4, m_responsebuffer);
+
   m_phase = PHASE_STATUSIN;
 }
 

@@ -1,8 +1,6 @@
 #include "config.h"
 #include "scsi_defs.h"
 
-#define SCSI_DB_MASK 0x00ff0800
-
 /*
  *  Data uint8_t to GPIOB register setting value and parity table
 */
@@ -68,7 +66,7 @@ void onBusReset(void)
 #if SUPPORT_SASI
   // SASI I / F for X1 turbo has RST pulse write cycle +2 clock ==
   // I can't filter because it only activates about 1.25us
-  if(!m_sasi_mode) {
+  if(!(m_sel->m_quirks & QUIRKS_SASI)) {
 #endif
     if(digitalRead(RST)) return;
     delayMicroseconds(20);
@@ -101,11 +99,11 @@ inline void readHandshakeBlock(uint8_t *d, uint16_t len)
 {
   while(len) {
     SET_REQ_ACTIVE();
-    while(!GET_ACK()) { if(m_isBusReset) { return 0; } }
+    while(!GET_ACK()) { if(m_isBusReset) { return; } }
     *d++ = readIO();
     len--;
     SET_REQ_INACTIVE();
-    while(GET_ACK()) { if(m_isBusReset) { return 0; } }
+    while(GET_ACK()) { if(m_isBusReset) { return; } }
   }
 }
 
@@ -118,10 +116,10 @@ inline void writeHandshake(uint8_t d)
   SCSI_DB_OUTPUT(d);
 
   SET_REQ_ACTIVE();
-  while(!GET_ACK()) { if(m_isBusReset) { return 0; } }
+  while(!GET_ACK()) { if(m_isBusReset) { return; } }
   SET_REQ_INACTIVE();
   SCSI_DB_INPUT();
-  while(GET_ACK()) { if(m_isBusReset) { return 0; } }
+  while(GET_ACK()) { if(m_isBusReset) { return; } }
 }
 
 inline void writeHandshakeBlock(const uint8_t *d, uint16_t len)
@@ -130,10 +128,10 @@ inline void writeHandshakeBlock(const uint8_t *d, uint16_t len)
   while(len) {
     SCSI_DB_OUTPUT(*d++);
     SET_REQ_ACTIVE();
-    while(!GET_ACK()) { if(m_isBusReset) { return 0; } }
+    while(!GET_ACK()) { if(m_isBusReset) { return; } }
     len--;
     SET_REQ_INACTIVE();
-    while(GET_ACK()) { if(m_isBusReset) { return 0; } }
+    while(GET_ACK()) { if(m_isBusReset) { return; } }
   }
   SCSI_DB_INPUT();
 }

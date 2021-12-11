@@ -1,7 +1,7 @@
 #ifndef __CONFIG_H
 #define __CONFIG_H
 
-#define DEBUG                  0          // 0:No debug information output (Faster by 2-3x+)
+#define DEBUG                  1          // 0:No debug information output (Faster by 2-3x+)
                                           // 1: Debug information output to USB Serial
                                           // 2: Debug information output to LOG.txt (slow)
 
@@ -21,16 +21,19 @@
 // HDD format
 #define MAX_BLOCKSIZE          (1 << 15)  // Maximum BLOCK size (2048 to 8192 tested, 16384 had issues)
 
+#define SCSI_INQUIRY_RESPONSE_SIZE 96
 
 // Supported Device Types
 #define SUPPORT_DISK           true
 #define SUPPORT_OPTICAL        true
 #define SUPPORT_TAPE           false
-
+#define SUPPORT_MO             false
+#define SUPPORT_INITIATOR      true
 
 // Compatibility Settings
 #define SUPPORT_SASI           false      // Enable SASI compatiblity for Sharp X68000
 #define SUPPORT_SASI_DEFAULT   false      // Turn it on by default
-
+#define SUPPORT_APPLE          true
+#define SUPPORT_APPLE_DEFAULT  false
 
 #endif /* __CONFIG_H */

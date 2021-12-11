@@ -272,7 +272,12 @@ void ConfigureTapeHandlers(VirtualDevice_t *vdev) {
 // If config file exists, read the first three lines and copy the contents.
 // File must be well formed or you will get junk in the SCSI Vendor fields.
 void ConfigureTape(VirtualDevice_t *vdev, const char *image_name) {
-  memcpy(vdev->m_inquiryresponse, SCSI_TAPE_INQUIRY_RESPONSE, sizeof(SCSI_CDROM_INQUIRY_RESPONSE));
+  for(int i = 0; SCSI_INQUIRY_RESPONSE[i][0] != 0xff; i++) {
+    if(SCSI_INQUIRY_RESPONSE[i][0] == DEV_TAPE) {
+      memcpy(vdev->m_inquiryresponse, SCSI_INQUIRY_RESPONSE[i], SCSI_INQUIRY_RESPONSE_SIZE);
+      break;
+    }
+  }
 
   if(image_name) {
     char configname[MAX_FILE_PATH+1];

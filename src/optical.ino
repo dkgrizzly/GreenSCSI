@@ -530,7 +530,7 @@ void ConfigureOpticalHandlers(VirtualDevice_t *vdev) {
   vdev->m_handler[CMD_SEEK10]                        = &Seek10CommandHandler;
   vdev->m_handler[CMD_READ_TOC]                      = &OpticalReadTOCCommandHandler;
   vdev->m_handler[CMD_READ_HEADER]                   = &OpticalHeaderCommandHandler;
-  vdev->m_handler[CMD_GET_CONFIGURATION]             = &OpticalGetConfigurationCommandHandler;
+  //vdev->m_handler[CMD_GET_CONFIGURATION]             = &OpticalGetConfigurationCommandHandler;
   vdev->m_handler[CMD_GET_EVENT_STATUS_NOTIFICATION] = &OpticalEventStatusCommandHandler;
   vdev->m_handler[CMD_READ_DISC_INFORMATION]         = &OpticalReadDiscInfoCommandHandler;
   vdev->m_handler[CMD_MODE_SELECT10]                 = &ModeSelect10CommandHandler;
@@ -540,7 +540,12 @@ void ConfigureOpticalHandlers(VirtualDevice_t *vdev) {
 // If config file exists, read the first three lines and copy the contents.
 // File must be well formed or you will get junk in the SCSI Vendor fields.
 void ConfigureOptical(VirtualDevice_t *vdev, const char *image_name) {
-  memcpy(vdev->m_inquiryresponse, SCSI_CDROM_INQUIRY_RESPONSE, sizeof(SCSI_CDROM_INQUIRY_RESPONSE));
+  for(int i = 0; SCSI_INQUIRY_RESPONSE[i][0] != 0xff; i++) {
+    if(SCSI_INQUIRY_RESPONSE[i][0] == DEV_OPTICAL) {
+      memcpy(vdev->m_inquiryresponse, SCSI_INQUIRY_RESPONSE[i], SCSI_INQUIRY_RESPONSE_SIZE);
+      break;
+    }
+  }
 
   if(image_name) {
     char configname[MAX_FILE_PATH+1];

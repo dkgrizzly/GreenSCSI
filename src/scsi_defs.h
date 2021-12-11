@@ -42,6 +42,7 @@
 #define CMD_READUPDATEDBLOCK10    0x2D
 #define CMD_WRITEANDVERIFY10      0x2E  /* Optional */
 #define CMD_VERIFY10              0x2F
+#define CMD_SEARCH_DATA_EQUAL     0x31  /* Optional */
 #define CMD_PREFETCH_CACHE10      0x34  /* Optional */
 #define CMD_READPOSITION10        0x34  /* Optional */
 #define CMD_SYNCHRONIZE_CACHE10   0x35  /* Optional */
@@ -164,5 +165,8 @@
 #if USE_DB2ID_TABLE
 extern const uint8_t db2scsiid[256];
 #endif
+
+#define QUIRKS_SASI  0b00000001
+#define QUIRKS_APPLE 0b00000010
 
 #endif

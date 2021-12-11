@@ -115,16 +115,27 @@ void ConfigureDiskHandlers(VirtualDevice_t *vdev) {
   vdev->m_handler[CMD_WRITE10]         = &Write10CommandHandler;
   vdev->m_handler[CMD_SEEK10]          = &Seek10CommandHandler;
   vdev->m_handler[CMD_MODE_SENSE10]    = &ModeSenseCommandHandler;
+  vdev->m_handler[CMD_SEARCH_DATA_EQUAL] = &SearchDataEqualCommandHandler;
+  vdev->m_handler[CMD_READ_DEFECT_DATA] = &ReadDefectCommandHandler;
 #if SUPPORT_SASI
-  if(m_sasi_mode)
+  if(vdev->m_quirks & QUIRKS_SASI)
     vdev->m_handler[CMD_SET_DRIVE_PARAMETER] = &DTCsetDriveParameterCommandHandler;
-#endif    
+#endif
+#if SUPPORT_APPLE
+  if(vdev->m_quirks & QUIRKS_APPLE)
+    vdev->m_handler[CMD_MAC_UNKNOWN] = &AppleEECommandHandler;
+#endif
 }
 
 // If config file exists, read the first three lines and copy the contents.
 // File must be well formed or you will get junk in the SCSI Vendor fields.
 void ConfigureDisk(VirtualDevice_t *vdev, const char *image_name) {
-  memcpy(vdev->m_inquiryresponse, SCSI_DISK_INQUIRY_RESPONSE, sizeof(SCSI_DISK_INQUIRY_RESPONSE));
+  for(int i = 0; SCSI_INQUIRY_RESPONSE[i][0] != 0xff; i++) {
+    if(SCSI_INQUIRY_RESPONSE[i][0] == DEV_DISK) {
+      memcpy(vdev->m_inquiryresponse, SCSI_INQUIRY_RESPONSE[i], SCSI_INQUIRY_RESPONSE_SIZE);
+      break;
+    }
+  }
 
   if(image_name) {
     char configname[MAX_FILE_PATH+1];
