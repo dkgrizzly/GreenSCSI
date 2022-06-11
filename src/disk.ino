@@ -184,6 +184,9 @@ void ConfigureDiskHandlers(VirtualDevice_t *vdev) {
   vdev->m_handler[CMD_MODE_SENSE10]    = &ModeSenseCommandHandler;
   vdev->m_handler[CMD_SEARCH_DATA_EQUAL] = &SearchDataEqualCommandHandler;
   vdev->m_handler[CMD_READ_DEFECT_DATA] = &ReadDefectCommandHandler;
+  vdev->m_handler[CMD_SEND_DIAGNOSTIC] = &SendDiagnosticCommandHandler;
+  vdev->m_handler[CMD_PREFETCH_CACHE10] = &PrefetchCommandHandler;
+  vdev->m_handler[CMD_SYNCHRONIZE_CACHE10] = &SyncCacheCommandHandler;
 #if SUPPORT_SASI
   if(vdev->m_quirks & QUIRKS_SASI)
     vdev->m_handler[CMD_SET_DRIVE_PARAMETER] = &DTCsetDriveParameterCommandHandler;

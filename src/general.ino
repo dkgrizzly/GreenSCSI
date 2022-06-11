@@ -530,6 +530,24 @@ void SearchDataEqualCommandHandler() {
   m_phase = PHASE_STATUSIN;
 }
 
+void SendDiagnosticCommandHandler() {
+  LOGN("[SendDiagnostic]");
+  if(!m_sel) {
+    m_sts |= STATUS_CHECK; // Image file absent
+    m_phase = PHASE_STATUSIN;
+    return;
+  }
+  if(m_cmd[1] & 0x04) {
+  } else {
+      m_sel->m_sense.m_code = INVALID_FIELD_IN_CDB;    /* "Invalid field in CDB" */
+      m_sel->m_sense.m_key_specific[0] = ERROR_IN_OPCODE;  /* "Error in Byte 1" */
+      m_sel->m_sense.m_key_specific[1] = 0x00;
+      m_sel->m_sense.m_key_specific[2] = 0x01;
+      m_sts |= STATUS_CHECK;
+  }
+  m_phase = PHASE_STATUSIN;
+}
+
 void ReadDefectCommandHandler() {
   LOGN("[ReadDefect]");
   m_responsebuffer[0] = 0x00;
@@ -548,6 +566,16 @@ void StartStopUnitCommandHandler() {
 
 void PreAllowMediumRemovalCommandHandler() {
   LOGN("[PreAllowMed.Removal]");
+  m_phase = PHASE_STATUSIN;
+}
+
+void PrefetchCommandHandler() {
+  LOGN("[Prefetch]");
+  m_phase = PHASE_STATUSIN;
+}
+
+void SyncCacheCommandHandler() {
+  LOGN("[SyncCache]");
   m_phase = PHASE_STATUSIN;
 }
 

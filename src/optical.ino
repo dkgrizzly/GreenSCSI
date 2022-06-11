@@ -531,6 +531,7 @@ void ConfigureOpticalHandlers(VirtualDevice_t *vdev) {
   vdev->m_handler[CMD_READ_TOC]                      = &OpticalReadTOCCommandHandler;
   vdev->m_handler[CMD_READ_HEADER]                   = &OpticalHeaderCommandHandler;
   //vdev->m_handler[CMD_GET_CONFIGURATION]             = &OpticalGetConfigurationCommandHandler;
+  vdev->m_handler[CMD_SEND_DIAGNOSTIC] = &SendDiagnosticCommandHandler;
   vdev->m_handler[CMD_GET_EVENT_STATUS_NOTIFICATION] = &OpticalEventStatusCommandHandler;
   vdev->m_handler[CMD_READ_DISC_INFORMATION]         = &OpticalReadDiscInfoCommandHandler;
   vdev->m_handler[CMD_MODE_SELECT10]                 = &ModeSelect10CommandHandler;
