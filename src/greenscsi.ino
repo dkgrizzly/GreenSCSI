@@ -49,17 +49,19 @@
 // SDFAT
 SdFs sd;
 
+boolean debuglog = 0;
+
 #if DEBUG == 1
-#define LOG(XX)      Serial.print(XX)
-#define LOGHEX2(XX)  Serial.printf("%02x", XX)
-#define LOGHEX4(XX)  Serial.printf("%04x", XX)
-#define LOGHEX6(XX)  Serial.printf("%06x", XX)
-#define LOGHEX8(XX)  Serial.printf("%08x", XX)
-#define LOGN(XX)     Serial.println(XX)
-#define LOGHEX2N(XX) Serial.printf("%02x\r\n", XX)
-#define LOGHEX4N(XX) Serial.printf("%04x\r\n", XX)
-#define LOGHEX6N(XX) Serial.printf("%06x\r\n", XX)
-#define LOGHEX8N(XX) Serial.printf("%08x\r\n", XX)
+#define LOG(XX)      if(debuglog) Serial.print(XX)
+#define LOGHEX2(XX)  if(debuglog) Serial.printf("%02x", XX)
+#define LOGHEX4(XX)  if(debuglog) Serial.printf("%04x", XX)
+#define LOGHEX6(XX)  if(debuglog) Serial.printf("%06x", XX)
+#define LOGHEX8(XX)  if(debuglog) Serial.printf("%08x", XX)
+#define LOGN(XX)     if(debuglog) Serial.println(XX)
+#define LOGHEX2N(XX) if(debuglog) Serial.printf("%02x\r\n", XX)
+#define LOGHEX4N(XX) if(debuglog) Serial.printf("%04x\r\n", XX)
+#define LOGHEX6N(XX) if(debuglog) Serial.printf("%06x\r\n", XX)
+#define LOGHEX8N(XX) if(debuglog) Serial.printf("%08x\r\n", XX)
 #elif DEBUG == 2
 #define LOG(XX)      LOG_FILE.print(XX); LOG_FILE.sync();
 #define LOGHEX2(XX)  LOG_FILE.printf("%02x", XX); LOG_FILE.sync();

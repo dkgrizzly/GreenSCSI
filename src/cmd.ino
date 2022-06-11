@@ -125,6 +125,7 @@ cmdvar_t cmdenv[ENVIRONMENT_SIZE];
 
 int getvar(const char *varname, int defaultvalue) {
   if(!strcasecmp(varname, "ERRORLEVEL")) return errorlevel;
+  if(!strcasecmp(varname, "DEBUG")) return debuglog;
   
   for(int i = 0; i < ENVIRONMENT_SIZE; i++) {
     if(!strcmp(cmdenv[i].key, varname)) {
@@ -136,6 +137,7 @@ int getvar(const char *varname, int defaultvalue) {
 
 char* getvar(const char *varname, char *defaultvalue) {
   if(!strcasecmp(varname, "ERRORLEVEL")) return NULL;
+  if(!strcasecmp(varname, "DEBUG")) return NULL;
 
   for(int i = 0; i < ENVIRONMENT_SIZE; i++) {
     if(!strcasecmp(cmdenv[i].key, varname)) {
@@ -157,6 +159,7 @@ void setvarcmd(int argc, char **argv) {
   }
 
   if(!strcasecmp(argv[1], "ERRORLEVEL")) return;
+  if(!strcasecmp(argv[1], "DEBUG")) { debuglog = strtoul(argv[2], NULL, 0); return; }
 
   // Find existing variable matching name and replace it
   for(i = 0; i < ENVIRONMENT_SIZE; i++) {
@@ -199,6 +202,7 @@ void unsetvarcmd(int argc, char **argv) {
   }
 
   if(!strcasecmp(argv[1], "ERRORLEVEL")) return;
+  if(!strcasecmp(argv[1], "DEBUG")) { debuglog = 0; return; }
 
   // Find existing variable matching name and delete it
   for(i = 0; i < ENVIRONMENT_SIZE; i++) {
@@ -226,6 +230,11 @@ void getvarcmd(int argc, char **argv) {
 
   if(!strcasecmp(argv[1], "ERRORLEVEL")) {
     Serial.printf("%d\r\n", errorlevel);
+    return;
+  }
+
+  if(!strcasecmp(argv[1], "DEBUG")) {
+    Serial.printf("%d\r\n", debuglog);
     return;
   }
 
