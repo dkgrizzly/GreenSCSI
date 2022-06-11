@@ -22,6 +22,7 @@
 #define MAX_BLOCKSIZE          (1 << 15)  // Maximum BLOCK size (2048 to 8192 tested, 16384 had issues)
 
 #define SCSI_INQUIRY_RESPONSE_SIZE 96
+extern uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE];
 
 // Supported Device Types
 #define SUPPORT_DISK           true
@@ -29,6 +30,7 @@
 #define SUPPORT_TAPE           false
 #define SUPPORT_MO             false
 #define SUPPORT_INITIATOR      true
+#define SUPPORT_CONTROL        true
 
 // Compatibility Settings
 #define SUPPORT_SASI           false      // Enable SASI compatiblity for Sharp X68000

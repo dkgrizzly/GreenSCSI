@@ -1506,6 +1506,12 @@ void createcmd(int argc, char **argv) {
     goto success;
   }
 #endif /* SUPPORT_TAPE */
+#if SUPPORT_CONTROL
+  if(!strcasecmp(argv[1], "control")) {
+    ConfigureControl(h, NULL);
+    goto success;
+  }
+#endif /* SUPPORT_CONTROL */
 
 //failure:
   errorlevel = -1;
@@ -1711,6 +1717,9 @@ void saveconfig(int argc, char **argv) {
         if(h->m_enabled) {
           // The create command automatically changes directory to the created object
           switch(h->m_type) {
+            case DEV_PROCESSOR:
+              config_file.print("create control\r\n");
+              break;
             case DEV_DISK:
               config_file.print("create disk\r\n");
               break;

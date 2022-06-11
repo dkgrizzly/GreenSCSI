@@ -93,7 +93,14 @@
  */
 #define DEV_DISK            0x00
 #define DEV_TAPE            0x01
+#define DEV_PRINTER         0x02
+#define DEV_PROCESSOR       0x03
+#define DEV_WORM            0x04
 #define DEV_OPTICAL         0x05
+#define DEV_SCANNER         0x06
+#define DEV_OMS             0x07
+#define DEV_CHANGER         0x08
+#define DEV_COMM            0x09
 
 /*
  *  SCSI MESSAGE CODES

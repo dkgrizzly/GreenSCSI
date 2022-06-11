@@ -2,7 +2,7 @@
 
 // SCSI Drive Vendor information
 
-static uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE] = {
+uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE] = {
 #if SUPPORT_SASI
 {
   0x00, //Device type
@@ -162,6 +162,24 @@ static uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE] = {
   0
 },
 #endif /* SUPPORT_TAPE */
+
+
+#if SUPPORT_CONTROL
+{
+  DEV_PROCESSOR, //device type
+  0x80, //RMB = 0
+  0x03, //ISO, ECMA, ANSI version
+  0x02, //Response data format
+  37 - 4, //Additional data length
+  0, //Reserve
+  0x00, // Support function
+  0x00, // Support function
+  'G', 'R', 'N', 'S', 'C', 'S', 'I', ' ', // vendor 8
+  'G', 'R', 'E', 'E', 'N', 'S', 'C', 'S', 'I', 'C', 'T','R', 'L', ' ', ' ', ' ', // product 16
+  'G', 'S', 'C', '0', // version 4
+  0
+},
+#endif /* SUPPORT_CONTROL */
 
 // Invalid entry to mark end of data
 {
