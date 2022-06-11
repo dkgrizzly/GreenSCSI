@@ -162,7 +162,8 @@
 
 /* Additional Sense Information */
 #define NO_ADDITIONAL_SENSE_INFORMATION 0x00
-#define INVALID_LBA 0x21
+#define LUN_NOT_READY        0x04
+#define INVALID_LBA          0x21
 #define INVALID_FIELD_IN_CDB 0x24
 #define NOTREADY_TO_READY_CHANGE 0x28
 #define UNIT_POWERON_RESET   0x29

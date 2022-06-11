@@ -24,7 +24,7 @@ void Seek6CommandHandler() {
 void ReadCapacityCommandHandler() {
   LOGN("[ReadCapacity]");
   if(!m_sel) {
-    m_sts |= 0x02; // Image file absent
+    m_sts |= STATUS_CHECK;
     m_phase = PHASE_STATUSIN;
     return;
   }

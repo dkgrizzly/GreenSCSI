@@ -5,7 +5,7 @@
 uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE] = {
 #if SUPPORT_SASI
 {
-  0x00, //Device type
+  DEV_DISK, //Device type
   0x00, //RMB = 0
   0x01, //ISO,ECMA,ANSI version
   0x01, //Response data format
@@ -21,7 +21,7 @@ uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE] = {
 
 #if SUPPORT_DISK
 {
-  0x00, //device type
+  DEV_DISK, //device type
   0x00, //RMB = 0
   0x05, //ISO, ECMA, ANSI version
   0x02, //Response data format
@@ -39,7 +39,7 @@ uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE] = {
 },
 
 {
-  0x00, //device type
+  DEV_DISK, //device type
   0x00, //RMB = 0
   0x05, //ISO, ECMA, ANSI version
   0x02, //Response data format
@@ -59,7 +59,7 @@ uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE] = {
 
 #if SUPPORT_OPTICAL
 {
-  0x05, //device type
+  DEV_OPTICAL, //device type
   0x80, //RMB = 0
   0x05, //ISO, ECMA, ANSI version
   0x02, //Response data format
@@ -76,7 +76,7 @@ uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE] = {
   0
 },
 {
-  0x05, //device type
+  DEV_OPTICAL, //device type
   0x80, //RMB = 0
   0x05, //ISO, ECMA, ANSI version
   0x02, //Response data format
@@ -93,7 +93,7 @@ uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE] = {
   0
 },
 {
-  0x05, //device type
+  DEV_OPTICAL, //device type
   0x80, //RMB = 0
   0x05, //ISO, ECMA, ANSI version
   0x02, //Response data format
@@ -106,7 +106,7 @@ uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE] = {
   0
 },
 {
-  0x05, //device type
+  DEV_OPTICAL, //device type
   0x80, //RMB = 0
   0x05, //ISO, ECMA, ANSI version
   0x02, //Response data format
@@ -119,7 +119,7 @@ uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE] = {
   0
 },
 {
-  0x05, //device type
+  DEV_OPTICAL, //device type
   0x80, //RMB = 0
   0x05, //ISO, ECMA, ANSI version
   0x02, //Response data format
@@ -132,7 +132,7 @@ uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE] = {
   0
 },
 {
-  0x05, //device type
+  DEV_OPTICAL, //device type
   0x80, //RMB = 0
   0x05, //ISO, ECMA, ANSI version
   0x02, //Response data format
@@ -148,7 +148,7 @@ uint8_t SCSI_INQUIRY_RESPONSE[][SCSI_INQUIRY_RESPONSE_SIZE] = {
 
 #if SUPPORT_TAPE
 {
-  0x01, //device type
+  DEV_TAPE, //device type
   0x80, //RMB = 0
   0x03, //ISO, ECMA, ANSI version
   0x02, //Response data format

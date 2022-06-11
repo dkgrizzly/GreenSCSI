@@ -45,8 +45,17 @@ void RequestSenseCommandHandler() {
     buf[12] = 0x25; // Logical Unit Not Supported
   } else {
     buf[2] = m_sel->m_sense.m_key;
+    buf[12] = m_sel->m_sense.m_code;
+    buf[13] = m_sel->m_sense.m_key_specific[0];
+    buf[14] = m_sel->m_sense.m_key_specific[1];
+    buf[15] = m_sel->m_sense.m_key_specific[2];
     m_sel->m_sense.m_key = 0;
+    m_sel->m_sense.m_code = 0;
+    m_sel->m_sense.m_key_specific[0] = 0;
+    m_sel->m_sense.m_key_specific[1] = 0;
+    m_sel->m_sense.m_key_specific[2] = 0;
   }
+
   writeDataPhase(len < 18 ? len : 18, buf);  
   m_phase = PHASE_STATUSIN;
 }
@@ -54,25 +63,67 @@ void RequestSenseCommandHandler() {
 void TestUnitCommandHandler() {
   LOGN("[TestUnit]");
   if(!m_sel) {
-    // Image file absent
-    m_sel->m_sense.m_key = NOT_READY; // NOT_READY
-    m_sel->m_sense.m_code = NO_MEDIA; // Logical Unit Not Supported
+    m_sts |= STATUS_CHECK;
+    return;
   }
+  if(!m_sel->m_file.isOpen()) {
+    m_sts |= STATUS_CHECK;
+    m_sel->m_sense.m_key = NOT_READY; // Not ready
+    m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
+    m_sel->m_sense.m_key_specific[0] = 0x03;
+    return;
+  }
+
   m_phase = PHASE_STATUSIN;
 }
 
 void RezeroUnitCommandHandler() {
   LOGN("[RezeroUnit]");
+  if(!m_sel) {
+    m_sts |= STATUS_CHECK;
+    return;
+  }
+  if(!m_sel->m_file.isOpen()) {
+    m_sts |= STATUS_CHECK;
+    m_sel->m_sense.m_key = NOT_READY; // Not ready
+    m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
+    m_sel->m_sense.m_key_specific[0] = 0x03;
+    return;
+  }
   m_phase = PHASE_STATUSIN;
 }
 
 void FormatUnitCommandHandler() {
   LOGN("[FormatUnit]");
+  if(!m_sel) {
+    m_sts |= STATUS_CHECK;
+    return;
+  }
+  if(!m_sel->m_file.isOpen()) {
+    m_sts |= STATUS_CHECK;
+    m_sel->m_sense.m_key = NOT_READY; // Not ready
+    m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
+    m_sel->m_sense.m_key_specific[0] = 0x03;
+    return;
+  }
+
   m_phase = PHASE_STATUSIN;
 }
 
 void ReassignBlocksCommandHandler() {
   LOGN("[ReassignBlocks]");
+  if(!m_sel) {
+    m_sts |= STATUS_CHECK;
+    return;
+  }
+  if(!m_sel->m_file.isOpen()) {
+    m_sts |= STATUS_CHECK;
+    m_sel->m_sense.m_key = NOT_READY; // Not ready
+    m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
+    m_sel->m_sense.m_key_specific[0] = 0x03;
+    return;
+  }
+
   m_phase = PHASE_STATUSIN;
 }
 
@@ -103,14 +154,22 @@ void ModeSenseCommandHandler()
       len = 2;
       break;
     default:
-      m_sts |= 0x02;
+      m_sts |= STATUS_CHECK;
       m_phase = PHASE_STATUSIN;
       return;
   }
   
   /* Check whether medium is present */
   if(!m_sel) {
-    m_sts |= 0x02;
+    m_sts |= STATUS_CHECK; // Image file absent
+    m_phase = PHASE_STATUSIN;
+    return;
+  }
+  if(!m_sel->m_file.isOpen()) {
+    m_sts |= STATUS_CHECK;
+    m_sel->m_sense.m_key = NOT_READY; // Not ready
+    m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
+    m_sel->m_sense.m_key_specific[0] = 0x03;
     m_phase = PHASE_STATUSIN;
     return;
   }
@@ -387,16 +446,27 @@ void ModeSenseCommandHandler()
 }
 
 uint8_t onModeSelectCommand() {
-  m_sel->m_sense.m_code = INVALID_FIELD_IN_CDB;    /* "Invalid field in CDB" */
-  m_sel->m_sense.m_key_specific[0] = ERROR_IN_OPCODE;  /* "Error in Byte 2" */
-  m_sel->m_sense.m_key_specific[1] = 0x00;
-  m_sel->m_sense.m_key_specific[2] = 0x04;
-  return 0x02;
+  return STATUS_GOOD;
 }
 
 void ModeSelect6CommandHandler() {
   LOG("[ModeSelect6] ");
   uint16_t len = m_cmd[4];
+  if(!m_sel) {
+    m_sts |= STATUS_CHECK; // Image file absent
+    m_phase = PHASE_STATUSIN;
+    return;
+  }
+  if(len > MAX_BLOCKSIZE) {
+      m_sel->m_sense.m_key = ILLEGAL_REQUEST;
+      m_sel->m_sense.m_code = INVALID_FIELD_IN_CDB;    /* "Invalid field in CDB" */
+      m_sel->m_sense.m_key_specific[0] = ERROR_IN_OPCODE;  /* "Error in Byte 4" */
+      m_sel->m_sense.m_key_specific[1] = 0x00;
+      m_sel->m_sense.m_key_specific[2] = 0x04;
+      m_sts |= STATUS_CHECK;
+      m_phase = PHASE_STATUSIN;
+      return;
+  }
   readDataPhase(len, m_responsebuffer);
 
   for(int i = 1; i < len; i++ ) {
@@ -404,13 +474,28 @@ void ModeSelect6CommandHandler() {
     LOGHEX2(m_responsebuffer[i]);
   }
   LOGN("");
-//  m_sts |= onModeSelectCommand();
+  m_sts |= onModeSelectCommand();
   m_phase = PHASE_STATUSIN;
 }
 
 void ModeSelect10CommandHandler() {
   LOGN("[ModeSelect10]");
   uint16_t len = ((uint16_t)m_cmd[7] << 8) | m_cmd[8];
+  if(!m_sel) {
+    m_sts |= STATUS_CHECK; // Image file absent
+    m_phase = PHASE_STATUSIN;
+    return;
+  }
+  if(len > MAX_BLOCKSIZE) {
+      m_sel->m_sense.m_key = ILLEGAL_REQUEST;
+      m_sel->m_sense.m_code = INVALID_FIELD_IN_CDB;    /* "Invalid field in CDB" */
+      m_sel->m_sense.m_key_specific[0] = ERROR_IN_OPCODE;  /* "Error in Byte 7" */
+      m_sel->m_sense.m_key_specific[1] = 0x00;
+      m_sel->m_sense.m_key_specific[2] = 0x07;
+      m_sts |= STATUS_CHECK;
+      m_phase = PHASE_STATUSIN;
+      return;
+  }
   readDataPhase(len, m_responsebuffer);
 
   for(int i = 1; i < len; i++ ) {
@@ -418,7 +503,7 @@ void ModeSelect10CommandHandler() {
     LOGHEX2(m_responsebuffer[i]);
   }
   LOGN("");
-//  m_sts |= onModeSelectCommand();
+  m_sts |= onModeSelectCommand();
   m_phase = PHASE_STATUSIN;
 }
 
@@ -431,8 +516,8 @@ void ReadDefectCommandHandler() {
   LOGN("[ReadDefect]");
   m_responsebuffer[0] = 0x00;
   m_responsebuffer[1] = m_cmd[2];
-  m_responsebuffer[2] = 0x00; // List Length MSB
-  m_responsebuffer[3] = 0x00; // List Length LSB
+  m_responsebuffer[2] = m_cmd[7]; // List Length MSB
+  m_responsebuffer[3] = m_cmd[8]; // List Length LSB
   writeDataPhase(4, m_responsebuffer);
 
   m_phase = PHASE_STATUSIN;
@@ -450,13 +535,15 @@ void PreAllowMediumRemovalCommandHandler() {
 
 void UnknownCommandHandler() {
   LOGN("[*Unknown]");
-  m_sts |= 0x02;
-  m_sel->m_sense.m_key = 5;
+  m_sts |= STATUS_CHECK;
+  if(m_sel) {
+    m_sel->m_sense.m_key = 5;
+  }
   m_phase = PHASE_STATUSIN;
 }
 
 void BadLunCommandHandler() {
   LOGN("[Bad LUN]");
-  m_sts |= 0x02;
+  m_sts |= STATUS_CHECK;
   m_phase = PHASE_STATUSIN;
 }

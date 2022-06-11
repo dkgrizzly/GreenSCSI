@@ -152,7 +152,7 @@ void OpticalReadSimpleTOC()
   uint8_t len = 0;
 
   if(!m_sel) {
-    m_sts |= 0x02;
+    m_sts |= STATUS_CHECK;
     m_phase = PHASE_STATUSIN;
     return;
   }
@@ -496,7 +496,7 @@ void OpticalLockTrayCommandHandler() {
 void OpticalReadCapacityCommandHandler() {
   LOGN("[ReadCapacity]");
   if(!m_sel) {
-    m_sts |= 0x02; // Image file absent
+    m_sts |= STATUS_CHECK; // Image file absent
     m_phase = PHASE_STATUSIN;
     return;
   }
