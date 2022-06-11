@@ -274,3 +274,41 @@ void readDataPhaseSD(uint32_t adds, uint32_t len)
   }
   m_sel->m_file.flush();
 }
+
+
+/*
+ * Data out phase.
+ *  Verify SD card while reading len block.
+ */
+void verifyDataPhaseSD(uint32_t adds, uint32_t len)
+{
+#if WRITE_SPEED_OPTIMIZE
+  uint32_t bigread = (MAX_BLOCKSIZE / m_sel->m_blocksize);
+#endif
+  uint32_t i = 0;
+
+  uint32_t pos = adds * m_sel->m_blocksize;
+  m_sel->m_file.seek(pos);
+  SET_MSG_INACTIVE();
+  SET_CD_INACTIVE();
+  SET_IO_INACTIVE();
+
+  while(i < len) {
+#if WRITE_SPEED_OPTIMIZE
+    if((len-i) >= bigread) {
+      readHandshakeBlock(m_buf, MAX_BLOCKSIZE);
+      i += bigread;
+    } else {
+      readHandshakeBlock(m_buf, m_sel->m_blocksize * (len-i));
+      i = len;
+    }
+#else
+    for(unsigned int j = 0; j <  m_sel->m_blocksize; j++) {
+      if(m_isBusReset) {
+        return;
+      }
+      m_buf[j] = readHandshake();
+    }
+#endif
+  }
+}
