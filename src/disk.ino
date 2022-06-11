@@ -89,6 +89,12 @@ void Seek10CommandHandler() {
   m_phase = PHASE_STATUSIN;
 }
 
+void Verify10CommandHandler() {
+  LOG("[Verify10]");
+  m_sts |= onVerifyCommand(((uint32_t)m_cmd[2] << 24) | ((uint32_t)m_cmd[3] << 16) | ((uint32_t)m_cmd[4] << 8) | m_cmd[5], ((uint32_t)m_cmd[7] << 8) | m_cmd[8]);
+  m_phase = PHASE_STATUSIN;
+}
+
 /*
  * READ6 / 10 Command processing.
  */
@@ -131,6 +137,27 @@ uint8_t onWriteCommand(uint32_t adds, uint32_t len)
   return 0; //sts
 }
 
+/*
+ * VERIFY6 / 10 Command processing.
+ */
+uint8_t onVerifyCommand(uint32_t adds, uint32_t len)
+{
+  uint8_t sts;
+
+  LOG("-V ");
+  LOGHEX6(adds);
+  LOG(" ");
+  LOGHEX4N(len);
+  
+  sts = checkBlockCommand(adds, len);
+  if(sts) return sts;
+  
+  LED_ON();
+  verifyDataPhaseSD(adds, len);
+  LED_OFF();
+  return 0; //sts
+}
+
 void ConfigureDiskHandlers(VirtualDevice_t *vdev) {
   for(int c = 0; c < 256; c++)
     vdev->m_handler[c] = &UnknownCommandHandler;
@@ -153,6 +180,7 @@ void ConfigureDiskHandlers(VirtualDevice_t *vdev) {
   vdev->m_handler[CMD_READ10]          = &Read10CommandHandler;
   vdev->m_handler[CMD_WRITE10]         = &Write10CommandHandler;
   vdev->m_handler[CMD_SEEK10]          = &Seek10CommandHandler;
+  vdev->m_handler[CMD_VERIFY10]        = &Verify10CommandHandler;
   vdev->m_handler[CMD_MODE_SENSE10]    = &ModeSenseCommandHandler;
   vdev->m_handler[CMD_SEARCH_DATA_EQUAL] = &SearchDataEqualCommandHandler;
   vdev->m_handler[CMD_READ_DEFECT_DATA] = &ReadDefectCommandHandler;
