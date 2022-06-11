@@ -1,6 +1,31 @@
 #include "config.h"
 #include "scsi_defs.h"
 
+/*
+ * Check that the image file is present and the block range is valid.
+ */
+byte checkBlockCommand(uint32_t adds, uint32_t len)
+{
+  // Check that image file is present
+  if(!m_sel) {
+    return STATUS_CHECK;
+  }
+  if(!m_sel->m_file.isOpen()) {
+    m_sel->m_sense.m_key = NOT_READY; // Not ready
+    m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
+    m_sel->m_sense.m_key_specific[0] = 0x03;
+    return STATUS_CHECK;
+  }
+  // Check block range is valid
+  uint32_t bc = m_sel->m_fileSize / m_sel->m_blocksize;
+  if (adds >= bc || (adds + len) > bc) {
+    m_sel->m_sense.m_key = 5; // Illegal request
+    m_sel->m_sense.m_code = INVALID_LBA; // Logical block address out of range
+    return STATUS_CHECK;
+  }
+  return 0x00;
+}
+
 void Read6CommandHandler() {
   LOG("[Read6]");
   m_sts |= onReadCommand((((uint32_t)m_cmd[1] & 0x1F) << 16) | ((uint32_t)m_cmd[2] << 8) | m_cmd[3], (m_cmd[4] == 0) ? 0x100 : m_cmd[4]);
@@ -25,6 +50,14 @@ void ReadCapacityCommandHandler() {
   LOGN("[ReadCapacity]");
   if(!m_sel) {
     m_sts |= STATUS_CHECK;
+    m_phase = PHASE_STATUSIN;
+    return;
+  }
+  if(!m_sel->m_file.isOpen()) {
+    m_sts |= STATUS_CHECK;
+    m_sel->m_sense.m_key = NOT_READY; // Not ready
+    m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
+    m_sel->m_sense.m_key_specific[0] = 0x03;
     m_phase = PHASE_STATUSIN;
     return;
   }
@@ -61,12 +94,15 @@ void Seek10CommandHandler() {
  */
 uint8_t onReadCommand(uint32_t adds, uint32_t len)
 {
+  uint8_t sts;
+
   LOG("-R ");
   LOGHEX6(adds);
   LOG(" ");
   LOGHEX4N(len);
 
-  if(!m_sel) return 0x02; // Image file absent
+  sts = checkBlockCommand(adds, len);
+  if(sts) return sts;
   
   LED_ON();
   writeDataPhaseSD(adds, len);
@@ -79,13 +115,16 @@ uint8_t onReadCommand(uint32_t adds, uint32_t len)
  */
 uint8_t onWriteCommand(uint32_t adds, uint32_t len)
 {
+  uint8_t sts;
+
   LOG("-W ");
   LOGHEX6(adds);
   LOG(" ");
   LOGHEX4N(len);
   
-  if(!m_sel) return 0x02; // Image file absent
-  
+  sts = checkBlockCommand(adds, len);
+  if(sts) return sts;
+    
   LED_ON();
   readDataPhaseSD(adds, len);
   LED_OFF();
