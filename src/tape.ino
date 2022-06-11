@@ -5,12 +5,17 @@
 /*
  * READ6 / 10 Command processing.
  */
-void TapeReadCommandHandler()
+void onTapeReadCommand(uint32_t adds, uint32_t len)
 {
-  uint32_t len;
+  LOG("-R ");
+  LOGHEX4N(len);
 
-  LOG("[Read6]");
-  len = (m_cmd[4] << 16) | (m_cmd[3] << 8) | m_cmd[2];
+  if(!m_sel) {
+    m_sts |= STATUS_CHECK;
+    m_phase = PHASE_STATUSIN;
+    return;
+  }
+  
   switch(m_cmd[1] & 0x3) {
     case 0:
       if(len == 0) return;
@@ -29,11 +34,7 @@ void TapeReadCommandHandler()
       m_phase = PHASE_STATUSIN;
       return;
   }
-  LOG("-R ");
-  LOGHEX4N(len);
 
-  if(!m_sel) return 0x02; // Image file absent
-  
   LED_ON();
   writeDataPhaseTape(len);
   LED_OFF();
@@ -44,14 +45,16 @@ void TapeReadCommandHandler()
 /*
  * WRITE6 / 10 Command processing.
  */
-void TapeWriteCommandHandler()
+void onTapeWriteCommand(uint32_t adds, uint32_t len)
 {
-  uint32_t len;
-
-  LOG("[Write6]-W ");
+  LOG("-W ");
   LOGHEX4N(len);
   
-  if(!m_sel) return 0x02; // Image file absent
+  if(!m_sel) {
+    m_sts |= STATUS_CHECK;
+    m_phase = PHASE_STATUSIN;
+    return;
+  }
   
   LED_ON();
   m_sel->m_file.write(&len, 4);
@@ -62,6 +65,40 @@ void TapeWriteCommandHandler()
   m_phase = PHASE_STATUSIN;
 }
 
+void TapeRead6CommandHandler() {
+  LOG("[Read6]");
+  m_sts |= onTapeReadCommand((((uint32_t)m_cmd[1] & 0x1F) << 16) | ((uint32_t)m_cmd[2] << 8) | m_cmd[3], (m_cmd[4] == 0) ? 0x100 : m_cmd[4]);
+  m_phase = PHASE_STATUSIN;
+}
+
+void TapeWrite6CommandHandler() {
+  LOG("[Write6]");
+  m_sts |= onTapeWriteCommand((((uint32_t)m_cmd[1] & 0x1F) << 16) | ((uint32_t)m_cmd[2] << 8) | m_cmd[3], (m_cmd[4] == 0) ? 0x100 : m_cmd[4]);
+  m_phase = PHASE_STATUSIN;
+}
+
+void TapeSeek6CommandHandler() {
+  LOG("[Seek6]");
+  m_phase = PHASE_STATUSIN;
+}
+
+void TapeRead10CommandHandler() {
+  LOG("[Read10]");
+  m_sts |= onTapeReadCommand(((uint32_t)m_cmd[2] << 24) | ((uint32_t)m_cmd[3] << 16) | ((uint32_t)m_cmd[4] << 8) | m_cmd[5], ((uint32_t)m_cmd[7] << 8) | m_cmd[8]);
+  m_phase = PHASE_STATUSIN;
+}
+
+void TapeWrite10CommandHandler() {
+  LOG("[Write10]");
+  m_sts |= onTapeWriteCommand(((uint32_t)m_cmd[2] << 24) | ((uint32_t)m_cmd[3] << 16) | ((uint32_t)m_cmd[4] << 8) | m_cmd[5], ((uint32_t)m_cmd[7] << 8) | m_cmd[8]);
+  m_phase = PHASE_STATUSIN;
+}
+
+void TapeSeek10CommandHandler() {
+  LOG("[Seek10]");
+  m_phase = PHASE_STATUSIN;
+}
+
 void TapeModeSense6CommandHandler() {
   uint8_t len;
   int page, pagemax, pagemin;
@@ -69,7 +106,7 @@ void TapeModeSense6CommandHandler() {
   LOGN("[ModeSense6]");
   /* Check whether medium is present */
   if(!m_sel) {
-    m_sts |= 0x02;
+    m_sts |= STATUS_CHECK;
     m_phase = PHASE_STATUSIN;
     return;
   }
@@ -139,6 +176,12 @@ void TapeLoadUnloadCommandHandler() {
   } else {
     LOGN("[Unload]");
   }
+  if(!m_sel) {
+    m_sts |= STATUS_CHECK;
+    m_phase = PHASE_STATUSIN;
+    return;
+  }
+  
   m_phase = PHASE_STATUSIN;
 }
 
@@ -148,13 +191,19 @@ void TapePreventRemovalCommandHandler() {
   } else {
     LOGN("[Allow Removal]");
   }
+  if(!m_sel) {
+    m_sts |= STATUS_CHECK;
+    m_phase = PHASE_STATUSIN;
+    return;
+  }
+  
   m_phase = PHASE_STATUSIN;
 }
 
 void TapeReadCapacityCommandHandler() {
   LOGN("[ReadCapacity]");
   if(!m_sel) {
-    m_sts |= 0x02; // Image file absent
+    m_sts |= STATUS_CHECK; // Image file absent
     m_phase = PHASE_STATUSIN;
     return;
   }
@@ -172,7 +221,7 @@ void TapeReadCapacityCommandHandler() {
 void TapeEraseCommandHandler() {
   LOGN("[Erase]");
   if(!m_sel) {
-    m_sts |= 0x02; // Image file absent
+    m_sts |= STATUS_CHECK; // Image file absent
     m_phase = PHASE_STATUSIN;
     return;
   }
@@ -183,7 +232,7 @@ void TapeReadBlockLimitsCommandHandler() {
   uint16_t len = 0;
   LOGN("[ReadBlockLimits]");
   if(!m_sel) {
-    m_sts |= 0x02; // Image file absent
+    m_sts |= STATUS_CHECK; // Image file absent
     m_phase = PHASE_STATUSIN;
     return;
   }
@@ -201,7 +250,7 @@ void TapeReadBlockLimitsCommandHandler() {
 void TapeRewindUnitCommandHandler() {
   LOGN("[Rewind]");
   if(!m_sel) {
-    m_sts |= 0x02; // Image file absent
+    m_sts |= STATUS_CHECK; // Image file absent
     m_phase = PHASE_STATUSIN;
     return;
   }
@@ -214,10 +263,11 @@ void TapeReadPositionCommandHandler() {
   uint16_t len = 0;
   LOGN("[ReadPosition]");
   if(!m_sel) {
-    m_sts |= 0x02; // Image file absent
+    m_sts |= STATUS_CHECK; // Image file absent
     m_phase = PHASE_STATUSIN;
     return;
   }
+
   m_responsebuffer[len++] = (m_sel->m_filemarks == 0) ? (1 << 7) : 0;
   m_responsebuffer[len++] = 0x00; // Partition(0)
   m_responsebuffer[len++] = 0x00; // Reserved
@@ -252,18 +302,18 @@ void ConfigureTapeHandlers(VirtualDevice_t *vdev) {
   vdev->m_handler[CMD_REZERO_UNIT]                   = &TapeRewindUnitCommandHandler;
   vdev->m_handler[CMD_REQUEST_SENSE]                 = &RequestSenseCommandHandler;
   vdev->m_handler[CMD_READ_BLOCK_LIMITS]             = &TapeReadBlockLimitsCommandHandler;
-  vdev->m_handler[CMD_READ6]                         = &TapeReadCommandHandler;
-  vdev->m_handler[CMD_WRITE6]                        = &TapeWriteCommandHandler;
-  vdev->m_handler[CMD_SEEK6]                         = &TapeSeekCommandHandler;
+  vdev->m_handler[CMD_READ6]                         = &TapeRead6CommandHandler;
+  vdev->m_handler[CMD_WRITE6]                        = &TapeWrite6CommandHandler;
+  vdev->m_handler[CMD_SEEK6]                         = &TapeSeek6CommandHandler;
   vdev->m_handler[CMD_INQUIRY]                       = &InquiryCommandHandler;
   vdev->m_handler[CMD_MODE_SELECT6]                  = &ModeSelect6CommandHandler;
   vdev->m_handler[CMD_MODE_SENSE6]                   = &TapeModeSense6CommandHandler;
   vdev->m_handler[CMD_START_STOP_UNIT]               = &TapeLoadUnloadCommandHandler;
   vdev->m_handler[CMD_PREVENT_REMOVAL]               = &TapePreventRemovalCommandHandler;
   vdev->m_handler[CMD_READ_CAPACITY10]               = &TapeReadCapacityCommandHandler;
-  vdev->m_handler[CMD_READ10]                        = &TapeReadCommandHandler;
-  vdev->m_handler[CMD_WRITE10]                       = &TapeWriteCommandHandler;
-  vdev->m_handler[CMD_SEEK10]                        = &TapeSeekCommandHandler;
+  vdev->m_handler[CMD_READ10]                        = &TapeRead10CommandHandler;
+  vdev->m_handler[CMD_WRITE10]                       = &TapeWrite10CommandHandler;
+  vdev->m_handler[CMD_SEEK10]                        = &TapeSeek10CommandHandler;
   vdev->m_handler[CMD_READPOSITION10]                = &TapeReadPositionCommandHandler;
   vdev->m_handler[CMD_MODE_SELECT10]                 = &ModeSelect10CommandHandler;
   vdev->m_handler[CMD_MODE_SENSE10]                  = &TapeModeSense10CommandHandler;
