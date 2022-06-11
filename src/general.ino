@@ -409,6 +409,19 @@ void ModeSenseCommandHandler()
             m_responsebuffer[len + 3] = bc >> 8;
             m_responsebuffer[len + 4] = bc;
             m_responsebuffer[len + 5] = 1;   //Number of heads
+          }
+          len += 24;
+          break;
+        case MODEPAGE_FLEXIBLE_GEOMETRY:
+          {
+            m_responsebuffer[len + 0] = MODEPAGE_FLEXIBLE_GEOMETRY; //Page code
+            m_responsebuffer[len + 1] = 0x1E; // Page length
+            m_responsebuffer[len + 2] = 0x03; // Transfer rate 1mbit/s (MSB)
+            m_responsebuffer[len + 3] = 0xE8; // Transfer rate 1mbit/s (LSB)
+            m_responsebuffer[len + 4] = 16;   // Number of heads
+            m_responsebuffer[len + 5] = 18;   // Sectors per track
+            m_responsebuffer[len + 6] = 0x20; // Data bytes per sector (MSB)
+            m_responsebuffer[len + 6] = 0x00; // Data bytes per sector (LSB)
             len += 24;
           }
           break;
