@@ -1196,7 +1196,7 @@ void makeimagecmd(int argc, char **argv) {
       Serial.printf(": Unable to open '%s'.\r\n", tmp_path);
     } else {
       // Take advantage of our cylinders being 1MB
-      if(!file.preAllocate(cyl)) {
+      if(!file.preAllocate(fileSize)) {
         file.close();
         sd.remove(tmp_path+3);
 
