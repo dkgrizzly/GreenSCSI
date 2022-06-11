@@ -396,19 +396,24 @@ void ModeSenseCommandHandler()
 #endif
       case MODEPAGE_FORMAT_PARAMETERS:
           m_responsebuffer[len + 0] = MODEPAGE_FORMAT_PARAMETERS; //Page code
-          m_responsebuffer[len + 1] = 0x16; // Page length
-          m_responsebuffer[len + 11] = 0x3F;//Number of sectors / track
+          m_responsebuffer[len + 1] = 0x16;   // Page length
+          if((m_cmd[2] >> 6) != 1) {
+            m_responsebuffer[len + 11] = 0x3F;  // Number of sectors / track
+            m_responsebuffer[len + 12] = (m_sel->m_blocksize >> 8) & 0xff;  // Blocksize MSB
+            m_responsebuffer[len + 13] = (m_sel->m_blocksize >> 0) & 0xff;  // Blocksize LSB
+            m_responsebuffer[len + 15] = 0x1;   // Interleave
+          }
           len += 24;
           break;
         case MODEPAGE_RIGID_GEOMETRY:
-          {
+          m_responsebuffer[len + 0] = MODEPAGE_RIGID_GEOMETRY; //Page code
+          m_responsebuffer[len + 1] = 0x16; // Page length
+          if((m_cmd[2] >> 6) != 1) {
             uint32_t bc = m_sel->m_fileSize / m_sel->m_file;
-            m_responsebuffer[len + 0] = MODEPAGE_RIGID_GEOMETRY; //Page code
-            m_responsebuffer[len + 1] = 0x16; // Page length
             m_responsebuffer[len + 2] = bc >> 16;// Cylinder length
             m_responsebuffer[len + 3] = bc >> 8;
             m_responsebuffer[len + 4] = bc;
-            m_responsebuffer[len + 5] = 1;   //Number of heads
+            m_responsebuffer[len + 5] = 1;    // Number of heads
           }
           len += 24;
           break;
