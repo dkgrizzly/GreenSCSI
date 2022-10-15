@@ -1196,6 +1196,7 @@ void makeimagecmd(int argc, char **argv) {
       Serial.printf(": Unable to open '%s'.\r\n", tmp_path);
     } else {
       // Take advantage of our cylinders being 1MB
+#if 0
       if(!file.preAllocate(fileSize)) {
         file.close();
         sd.remove(tmp_path+3);
@@ -1206,10 +1207,25 @@ void makeimagecmd(int argc, char **argv) {
         Serial.printf(": Pre-allocate failed, SD Card must be formatted as ExFat.\r\n");
         return;
       }
+#endif
 
       if(!strcmp(argv[2], "msdos")) {
         file.write(mbr_bin, 512);
+        fileSize -= 512;
       }
+
+      memset(zero, 0, 512);
+      
+      while(fileSize) {
+        if((fileSize & 0x7FFF) == 0)
+           Serial.printf(".");
+        if((fileSize & 0x3FFFFF) == 0)
+           Serial.printf("\r\n");
+        file.write(zero, 512);
+        fileSize -= 512;
+      }
+      Serial.printf("\r\n");
+
       file.close();
 
       return;
