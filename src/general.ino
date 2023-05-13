@@ -40,15 +40,16 @@ void RequestSenseCommandHandler() {
   };
 
   if(!m_sel) {
-    // Image file absent
-    buf[2] = 0x02; // NOT_READY
-    buf[12] = 0x25; // Logical Unit Not Supported
+    buf[2] = 2; // Not ready
+    buf[12] = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
+    buf[13] = 0x03;
   } else {
     buf[2] = m_sel->m_sense.m_key;
     buf[12] = m_sel->m_sense.m_code;
     buf[13] = m_sel->m_sense.m_key_specific[0];
     buf[14] = m_sel->m_sense.m_key_specific[1];
     buf[15] = m_sel->m_sense.m_key_specific[2];
+  
     m_sel->m_sense.m_key = 0;
     m_sel->m_sense.m_code = 0;
     m_sel->m_sense.m_key_specific[0] = 0;
@@ -66,7 +67,7 @@ void TestUnitCommandHandler() {
     m_sts |= STATUS_CHECK;
     return;
   }
-  if(!m_sel->m_file.isOpen()) {
+  if(!m_sel->m_rawPart && !m_sel->m_file.isOpen()) {
     m_sts |= STATUS_CHECK;
     m_sel->m_sense.m_key = NOT_READY; // Not ready
     m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
@@ -83,13 +84,14 @@ void RezeroUnitCommandHandler() {
     m_sts |= STATUS_CHECK;
     return;
   }
-  if(!m_sel->m_file.isOpen()) {
+  if(!m_sel->m_rawPart && !m_sel->m_file.isOpen()) {
     m_sts |= STATUS_CHECK;
     m_sel->m_sense.m_key = NOT_READY; // Not ready
     m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
     m_sel->m_sense.m_key_specific[0] = 0x03;
     return;
   }
+
   m_phase = PHASE_STATUSIN;
 }
 
@@ -99,7 +101,7 @@ void FormatUnitCommandHandler() {
     m_sts |= STATUS_CHECK;
     return;
   }
-  if(!m_sel->m_file.isOpen()) {
+  if(!m_sel->m_rawPart && !m_sel->m_file.isOpen()) {
     m_sts |= STATUS_CHECK;
     m_sel->m_sense.m_key = NOT_READY; // Not ready
     m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
@@ -116,7 +118,7 @@ void ReassignBlocksCommandHandler() {
     m_sts |= STATUS_CHECK;
     return;
   }
-  if(!m_sel->m_file.isOpen()) {
+  if(!m_sel->m_rawPart && !m_sel->m_file.isOpen()) {
     m_sts |= STATUS_CHECK;
     m_sel->m_sense.m_key = NOT_READY; // Not ready
     m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
@@ -165,7 +167,7 @@ void ModeSenseCommandHandler()
     m_phase = PHASE_STATUSIN;
     return;
   }
-  if(!m_sel->m_file.isOpen()) {
+  if(!m_sel->m_rawPart && !m_sel->m_file.isOpen()) {
     m_sts |= STATUS_CHECK;
     m_sel->m_sense.m_key = NOT_READY; // Not ready
     m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required

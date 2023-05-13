@@ -24,6 +24,7 @@ int scriptlevel = -1;
 char cmd_prefix[256] = "/";
 
 extern uint8_t mbr_bin[];
+uint8_t zero[512];
 
 void cmdDisplay() {
   if(cmd_prefix[0] != 0) {
@@ -723,7 +724,7 @@ void changeDirectory(int argc, char **argv) {
       goto e_invalidpath;
     }
 
-    if(!strcmp(new_prefix, "/") || !strcmp(new_prefix, "/tgts") || !strcmp(new_prefix, "/vdevs")
+    if(!strcmp(new_prefix, "/") || !strcmp(new_prefix, "/tgts") || !strcmp(new_prefix, "/vdevs") || !strcmp(new_prefix, "/nv") || !strcmp(new_prefix, "/raw")
        || !strcmp(new_prefix, "/sd") || !strcmp(new_prefix, "/diag")|| !strcmp(new_prefix, "/diag/sd")
     ) {
       strcpy(cmd_prefix, new_prefix);
@@ -863,6 +864,7 @@ void showDirectory(int argc, char **argv) {
     printDirectory(0, 0, "/ ", " [...]");
     printDirectory(1, 0, "diag/ ", " [...]");
     printDirectory(1, 0, "sd/ ", " [...]");
+    printDirectory(1, 0, "raw/ ", " [...]");
     sprintf(tmp_right, " [%d Target%s]", NUM_SCSIID, (NUM_SCSIID != 1) ? "s" : "");
     printDirectory(1, 0, "tgts/ ", tmp_right);
     sprintf(tmp_right, " [%d Storage Object%s]", m_vdevcnt, (m_vdevcnt != 1) ? "s" : "");
@@ -872,6 +874,33 @@ void showDirectory(int argc, char **argv) {
   if(!strcmp(local_prefix, "/diag")) {
     printDirectory(0, 0, "/diag/ ", " [...]");
     printDirectory(1, 0, "sd/ ", " [...]");
+    return;
+  }
+  if(!strcmp(local_prefix, "/raw")) {
+    mbr_t *mbr = (mbr_t *)cardMBR;
+    printDirectory(0, 0, "/raw/ ", " [...]");
+
+    sd.card()->readSector(0, cardMBR);
+
+    for(uint8_t partIndex = 0; partIndex < 4; partIndex++) {
+      sprintf(tmp_left, "part%d", partIndex);
+      switch(mbr->part[partIndex].type) {
+        case 0x04:
+        case 0x06:
+        case 0x0B:
+        case 0x0C:
+        case 0x0E:
+          printDirectory(1, 0, tmp_left, "[FAT Filesystem]");
+          break;
+        case 0x07:
+          printDirectory(1, 0, tmp_left, "[EXFAT/NTFS Filesystem]");
+          break;
+        case 0x87:
+          sprintf(tmp_right, "[Emulated %dMB Drive]", (int)(mbr->part[partIndex].totalSectors / 2048));
+          printDirectory(1, 0, tmp_left, tmp_right);
+          break;
+      }
+    }
     return;
   }
   if(!strcmp(local_prefix, "/diag/sd")) {
@@ -995,6 +1024,31 @@ void showDirectory(int argc, char **argv) {
       showVDEV(0, 0, v);
       return;
     }
+  }
+  if(!strcmp(local_prefix, "/nv") || !strncmp(local_prefix, "/nv/", 4)) {
+    File root = lfs.open("/");
+    while(true) {
+      File entry = root.openNextFile();
+  
+      if(! entry) {
+        break;
+      }
+  
+      if(!entry.isDirectory()) {
+        sprintf(tmp_left, "%s ", entry.name());
+        if(entry.size() >= 8192) {
+          sprintf(tmp_right, " [%llu KB]", entry.size() >> 10);
+        } else {
+          sprintf(tmp_right, " [%llu Bytes]", entry.size());
+        }
+        printDirectory(1, 0, tmp_left, tmp_right);
+    
+      }
+  
+      entry.close();
+    }
+  
+    root.close();    
   }
   if(!strcmp(local_prefix, "/sd") || !strncmp(local_prefix, "/sd/", 4)) {
     char name[MAX_FILE_PATH+1];
@@ -1217,15 +1271,15 @@ void makeimagecmd(int argc, char **argv) {
       memset(zero, 0, 512);
       
       while(fileSize) {
-        if((fileSize & 0x7FFF) == 0)
+        if((fileSize & 0x1FFF) == 0)
            Serial.printf(".");
-        if((fileSize & 0x3FFFFF) == 0)
+        if((fileSize & 0x7FFFF) == 0)
            Serial.printf("\r\n");
         file.write(zero, 512);
         fileSize -= 512;
       }
       Serial.printf("\r\n");
-
+      
       file.close();
 
       return;
@@ -1250,7 +1304,9 @@ void catcmd(int argc, char **argv) {
   }
 
   fixupPath(tmp_path, argv[1]);
-  if(!strncmp(filename, "/sd/", 4)) {
+  if(!strncmp(filename, "/nv/", 4)) {
+    filename += 3;
+  } else if(!strncmp(filename, "/sd/", 4)) {
     filename += 3;
   } else {
     errorlevel = -1;
@@ -1394,6 +1450,14 @@ void setcmd(int argc, char **argv) {
       if((param_name) && !strcasecmp(param_name, "/quirks")) {
         if(argc<3) {
           Serial.printf("0x%02x\r\n", h->m_quirks);
+        } if(!strcasecmp(argv[2], "SASI") || !strcasecmp(argv[2], "+SASI")) {
+          h->m_quirks |= QUIRKS_SASI;
+        } if(!strcasecmp(argv[2], "-SASI")) {
+          h->m_quirks &= ~QUIRKS_SASI;
+        } if(!strcasecmp(argv[2], "APPLE") || !strcasecmp(argv[2], "+APPLE")) {
+          h->m_quirks |= QUIRKS_APPLE;
+        } if(!strcasecmp(argv[2], "-APPLE")) {
+          h->m_quirks &= ~QUIRKS_APPLE;
         } else {
           h->m_quirks = strtol(argv[2], NULL, 0);
         }
@@ -1593,6 +1657,14 @@ void mountcmd(int argc, char **argv) {
       return;
     }
   }
+  if(!strncmp(tmp_path, "/raw/", 5)) {
+    if(OpenDiskImage(h, tmp_path, 512)) {
+      strcpy(h->m_filename, tmp_path);
+      h->m_enabled = true;
+      
+      return;
+    }
+  }
 
   h->m_fileSize = 0;
   h->m_blocksize = 0;
@@ -1770,6 +1842,14 @@ void saveconfig(int argc, char **argv) {
   config_file.close();
 }
 
+char helponSelfTest[] =
+  "\r\n"
+  "selftest\r\n"
+  "\r\n"
+  "  Use the selftest command to check for miswired boards and shorts.\r\n"
+  "\r\n"
+;
+
 char helponSave[] =
   "\r\n"
   "saveconfig\r\n"
@@ -1907,6 +1987,7 @@ char helponHelp[] =
 
 Commands_t GlobalCommands[] = {
   // Command      Valid From Path   Req. Params    Short Help                    Long Help       Handler           Dispatch
+  { "selftest",   "/",              0,             "Execute Self Test.",         helponSelfTest, SelfTest,         NULL },
   { "cd",         "/",              1,             "change current directory",   NULL,           changeDirectory,  NULL },
   { "sl",         "/",              0,             NULL,                         NULL,           slcmd,            NULL },
   { "dir",        "/",              0,             NULL,                         NULL,           punishDirectory,  NULL },

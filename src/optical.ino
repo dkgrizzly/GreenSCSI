@@ -497,6 +497,10 @@ void OpticalReadCapacityCommandHandler() {
   LOGN("[ReadCapacity]");
   if(!m_sel) {
     m_sts |= STATUS_CHECK; // Image file absent
+    m_sel->m_sense.m_key_specific[0] = 0x04;
+    m_sel->m_sense.m_key_specific[1] = 0x03;
+    m_sel->m_sense.m_key_specific[2] = 0x00;
+    m_sel->m_sense.m_key_specific[3] = 0x00;
     m_phase = PHASE_STATUSIN;
     return;
   }

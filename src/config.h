@@ -14,7 +14,7 @@
 // SCSI config
 #define NUM_SCSIID             8          // Maximum number of supported SCSI-IDs (The minimum is 1)
 #define NUM_SCSILUN            8          // Maximum number of LUNs supported     (The minimum is 1)
-#define NUM_VDEV               8          // Maximum number of VDEVs supported    (The minimum is 1)
+#define NUM_VDEV               16         // Maximum number of VDEVs supported    (The minimum is 1)
 
 #define READ_PARITY_CHECK      0          // Perform read parity check (unverified)
 

@@ -211,6 +211,55 @@ void writeDataPhaseSD(uint32_t adds, uint32_t len)
   }
 }
 
+/* 
+ * Data in phase.
+ *  Send len block while reading from SD card.
+ */
+void writeDataPhaseRaw(uint32_t adds, uint32_t len)
+{
+#if READ_SPEED_OPTIMIZE_RAW
+  uint32_t bigread = (MAX_BLOCKSIZE / m_sel->m_blocksize);
+#endif
+  uint32_t i = 0;
+
+  //LOGN("DATAIN PHASE(RAW)");
+  uint32_t pos = ((adds * m_sel->m_blocksize) / 512) + m_sel->m_firstSector;
+
+  SET_MSG_INACTIVE();
+  SET_CD_INACTIVE();
+  SET_IO_ACTIVE();
+
+  while(i < len) {
+      // Asynchronous reads will make it faster ...
+#if READ_SPEED_OPTIMIZE_RAW
+    if((len-i) >= bigread) {
+      sd.card()->readSectors(pos, m_buf, (MAX_BLOCKSIZE / 512));
+      writeHandshakeBlock(m_buf, MAX_BLOCKSIZE);
+      i += bigread;
+      pos += (MAX_BLOCKSIZE / 512);
+    } else {
+      sd.card()->readSectors(pos, m_buf, ((m_sel->m_blocksize * (len-i)) / 512));
+      writeHandshakeBlock(m_buf, m_sel->m_blocksize * (len-i));
+      i = len;
+    }
+#else
+    sd.card()->readSectors(pos, m_buf, (m_sel->m_blocksize / 512));
+    pos++;
+    for(unsigned int j = 0; j < m_sel->m_blocksize; j++) {
+      if(m_isBusReset) {
+        m_phase = PHASE_BUSFREE;
+        return;
+      }
+      writeHandshake(m_buf[j]);
+    }
+#endif
+    if(m_isBusReset) {
+      m_phase = PHASE_BUSFREE;
+      return;
+    }
+  }
+}
+
 /*
  * Data out phase.
  *  len block read
@@ -275,6 +324,50 @@ void readDataPhaseSD(uint32_t adds, uint32_t len)
   m_sel->m_file.flush();
 }
 
+/*
+ * Data out phase.
+ *  Write to SD card while reading len block.
+ */
+void readDataPhaseRaw(uint32_t adds, uint32_t len)
+{
+#if WRITE_SPEED_OPTIMIZE
+  uint32_t bigread = (MAX_BLOCKSIZE / m_sel->m_blocksize);
+#endif
+  uint32_t i = 0;
+
+  //LOGN("DATAOUT PHASE(RAW)");
+  uint32_t pos = ((adds * m_sel->m_blocksize) / 512) + m_sel->m_firstSector;
+
+  SET_MSG_INACTIVE();
+  SET_CD_INACTIVE();
+  SET_IO_INACTIVE();
+
+  while(i < len) {
+#if WRITE_SPEED_OPTIMIZE
+    if((len-i) >= bigread) {
+      readHandshakeBlock(m_buf, MAX_BLOCKSIZE);
+      sd.card()->writeSectors(pos, m_buf, (MAX_BLOCKSIZE / 512));
+      i += bigread;
+      pos += (MAX_BLOCKSIZE / 512);
+    } else {
+      readHandshakeBlock(m_buf, m_sel->m_blocksize * (len-i));
+      sd.card()->writeSectors(pos, m_buf, ((m_sel->m_blocksize * (len-i)) / 512));
+      i = len;
+    }
+#else
+    for(unsigned int j = 0; j <  m_sel->m_blocksize; j++) {
+      if(m_isBusReset) {
+        return;
+      }
+      m_buf[j] = readHandshake();
+    }
+    sd.card()->writeSectors(pos, m_buf, (m_sel->m_blocksize / 512));
+    i++;
+    pos += (m_sel->m_blocksize / 512);
+#endif
+  }
+  m_sel->m_file.flush();
+}
 
 /*
  * Data out phase.
@@ -287,8 +380,50 @@ void verifyDataPhaseSD(uint32_t adds, uint32_t len)
 #endif
   uint32_t i = 0;
 
+  //LOGN("DATAOUT PHASE(SD)");
   uint32_t pos = adds * m_sel->m_blocksize;
   m_sel->m_file.seek(pos);
+  SET_MSG_INACTIVE();
+  SET_CD_INACTIVE();
+  SET_IO_INACTIVE();
+
+  while(i < len) {
+#if WRITE_SPEED_OPTIMIZE
+    if((len-i) >= bigread) {
+      readHandshakeBlock(m_buf, MAX_BLOCKSIZE);
+      //m_sel->m_file.verify(m_buf, MAX_BLOCKSIZE);
+      i += bigread;
+    } else {
+      readHandshakeBlock(m_buf, m_sel->m_blocksize * (len-i));
+      //m_sel->m_file.verify(m_buf, m_sel->m_blocksize * (len-i));
+      i = len;
+    }
+#else
+    for(unsigned int j = 0; j <  m_sel->m_blocksize; j++) {
+      if(m_isBusReset) {
+        return;
+      }
+      m_buf[j] = readHandshake();
+    }
+    //m_sel->m_file.verify(m_buf, m_sel->m_blocksize);
+#endif
+  }
+}
+
+
+/*
+ * Data out phase.
+ *  Verify SD card while reading len block.
+ */
+void verifyDataPhaseRaw(uint32_t adds, uint32_t len)
+{
+#if WRITE_SPEED_OPTIMIZE
+  uint32_t bigread = (MAX_BLOCKSIZE / m_sel->m_blocksize);
+#endif
+  uint32_t i = 0;
+
+  //LOGN("DATAOUT PHASE(RAW)");
+  uint32_t pos = ((adds * m_sel->m_blocksize) / 512) + m_sel->m_firstSector;
   SET_MSG_INACTIVE();
   SET_CD_INACTIVE();
   SET_IO_INACTIVE();

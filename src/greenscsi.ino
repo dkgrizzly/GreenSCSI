@@ -40,6 +40,7 @@
 
 #include <Arduino.h> // For Platform.IO
 #include <SPI.h>
+#include <LittleFS.h>
 #include <SdFat.h>
 #include "sdios.h"
 #include "config.h"
@@ -48,6 +49,25 @@
 
 // SDFAT
 SdFs sd;
+LittleFS_Program lfs;
+
+
+struct part_s {
+  uint8_t boot;
+  uint8_t beginCHS[3];
+  uint8_t type;
+  uint8_t endCHS[3];
+  uint32_t firstSector;
+  uint32_t totalSectors;
+} __attribute__((packed));
+typedef struct part_s part_t;
+//-----------------------------------------------------------------------------
+struct mbr_s {
+  uint8_t   bootCode[446];
+  part_t part[4];
+  uint8_t   signature[2];
+} __attribute__((packed));
+typedef struct mbr_s mbr_t;
 
 boolean debuglog = 0;
 
@@ -194,6 +214,8 @@ typedef struct VirtualDevice_s
   FsFile      m_file;                 // File object
   uint64_t    m_fileSize;             // File size
   size_t      m_blocksize;            // SCSI BLOCK size
+  uint32_t    m_firstSector;          // First sector for partition
+  boolean     m_rawPart;              // Raw Partition (True) or Image File (False)
 #if SUPPORT_TAPE
   size_t      m_filemarks;            // Tape position counter (file marks since BOM)
 #endif
@@ -225,6 +247,8 @@ uint16_t      default_quirks = (SUPPORT_SASI_DEFAULT ? QUIRKS_SASI : 0) | (SUPPO
 uint16_t ledbits = 0;
 uint8_t ledbit = 0;
 
+uint8_t cardMBR[512];
+
 typedef enum {
   PHASE_BUSFREE = 0,
   PHASE_SELECTION,
@@ -236,7 +260,7 @@ typedef enum {
 phase_t       m_phase = PHASE_BUSFREE;
 
 // Log File
-#define VERSION "1.2-20211204"
+#define VERSION "1.4-20230513"
 #if DEBUG == 2
 #define LOG_FILENAME "LOG.txt"
 FsFile LOG_FILE;
@@ -280,6 +304,59 @@ boolean OpenImage(VirtualDevice_t *h, const char *image_name)
  */
 boolean OpenDiskImage(VirtualDevice_t *h, const char *image_name, int blocksize)
 {
+  if(!strncmp(image_name, "/tgts/", 6)) {
+    LOGN("/tgts/ path is not supported for disk images.");
+    return false;
+  }
+
+  if(!strncmp(image_name, "/vdevs/", 7)) {
+    LOGN("/vdevs/ path is not supported for disk images.");
+    return false;
+  }
+
+  if(!strncmp(image_name, "/diag/", 6)) {
+    LOGN("/diag/ path is not supported for disk images.");
+    return false;
+  }
+
+  if(!strncmp(image_name, "/nv/", 4)) {
+    LOGN("/nv/ path is not supported for disk images.");
+    return false;
+  }
+
+  h->m_rawPart = false;
+
+  if(!strncmp(image_name, "/raw/part", 9)) {
+    int partIndex = image_name[9] - '0';
+    mbr_t *mbr = (mbr_t *)cardMBR;
+    if((partIndex < 0) || (partIndex > 3)) {
+      LOGN("partition index is outside the allowed range.");
+      return false;
+    }
+
+    sd.card()->readSector(0, cardMBR);
+    if(mbr->part[partIndex].type != 0x87) {
+      LOGN("partition is of the wrong type.");
+      return false;
+    }
+    
+    h->m_blocksize = blocksize;
+    h->m_fileSize = ((uint64_t)mbr->part[partIndex].totalSectors) * ((uint64_t)512);
+    h->m_rawPart = true;
+    h->m_firstSector = mbr->part[partIndex].firstSector;
+
+    LOG(" Imagefile: ");
+    LOG(image_name);
+    LOG(" / ");
+    LOG(h->m_fileSize / h->m_blocksize);
+    LOG(" sectors / ");
+    LOG(h->m_fileSize / 1024);
+    LOG(" KiB / ");
+    LOG(h->m_fileSize / 1024 / 1024);
+    LOGN(" MiB");
+    return true; // File opened
+  }
+
   if(!strncmp(image_name, "/sd/", 4))
     image_name += 3;
 
@@ -320,6 +397,29 @@ boolean OpenDiskImage(VirtualDevice_t *h, const char *image_name, int blocksize)
  */
 boolean OpenTapeImage(VirtualDevice_t *h, const char *image_name)
 {
+  if(!strncmp(image_name, "/tgts/", 6)) {
+    LOGN("/tgts/ path is not supported for tape images.");
+    return false;
+  }
+
+  if(!strncmp(image_name, "/vdevs/", 7)) {
+    LOGN("/vdevs/ path is not supported for tape images.");
+    return false;
+  }
+
+  if(!strncmp(image_name, "/diag/", 6)) {
+    LOGN("/diag/ path is not supported for tape images.");
+    return false;
+  }
+
+  if(!strncmp(image_name, "/nv/", 4)) {
+    LOGN("/nv/ path is not supported for tape images.");
+    return false;
+  }
+
+  if(!strncmp(image_name, "/sd/", 4))
+    image_name += 3;
+
   h->m_fileSize = 0;
   h->m_blocksize = 0;
   h->m_filemarks = 0;
@@ -406,6 +506,9 @@ void setup()
 
   LED_ON();
 
+  // Filesystems
+  lfs.begin(256 * 1024); // 256KB of program memory to be used as nonvolatile storage
+
   if(!sd.begin(SdioConfig(FIFO_SDIO))) {
 #if DEBUG > 0
     Serial.println("SD initialization failed!");
@@ -420,9 +523,13 @@ void setup()
   //HD image file open
   scsi_id_mask = 0x00;
 
-  // If greenscsi.cfg exists, run it
+  // If greenscsi.cfg exists, run it (try first from SD, otherwise from flash)
   if(sd.exists("/greenscsi.cfg")) {
     execscript((char*)"/sd/greenscsi.cfg");
+    execLoop();
+  } else
+  if(lfs.exists("/greenscsi.cfg")) {
+    execscript((char*)"/nv/greenscsi.cfg");
     execLoop();
   }
 
@@ -910,4 +1017,236 @@ void BusFreePhaseHandler() {
   m_isBusReset = false;
   // Reset back to waiting for selection phase.
   m_phase = PHASE_SELECTION;
+}
+
+typedef struct SelfTestPins_s {
+  int A;
+  int B;
+  int pA;
+  int pB;
+  char nA[4];
+  char nB[4];
+} SelfTestPins_t;
+
+SelfTestPins_t SelfTestPins[] = {
+  { IO, DB0, 50, 2, "I/O", "DB0" },
+  { IO, DB0, 48, 4, "REQ", "DB1" },
+  { IO, DB0, 46, 6, "C/D", "DB2" },
+  { IO, DB0, 44, 8, "SEL", "DB3" },
+  { IO, DB0, 42, 10, "MSG", "DB4" },
+  { IO, DB0, 50, 12, "RST", "DB5" },
+  { IO, DB0, 38, 14, "ACK", "DB6" },
+  { IO, DB0, 36, 16, "BSY", "DB7" },
+  { IO, DB0, 32, 18, "ATN", "DBP" },
+};
+
+void SelfTest(int argc, char **argv) {
+  int i, x;
+  char c;
+
+  Serial.printf("Are you sure you wish to run the self test? ");
+  for(;;) {
+    if (Serial.available()) {
+      c = Serial.read();
+      switch(c) {
+        default:
+          return;
+        case 'y': case 'Y':
+          goto ConnectHarness;
+      }
+    }
+  }
+
+ConnectHarness:
+  // Clear any extra characters
+  while (Serial.available()) {
+    c = Serial.read();
+  }
+
+  // Disable normal operation and prepare the self test.
+  detachInterrupt(RST);
+  detachInterrupt(SEL);
+
+  Serial.printf("Self Test starting...\r\n");
+
+  // Delay for 3 seconds
+  delay(3000);
+
+  while (Serial.available()) {
+    c = Serial.read();
+  }
+
+  Serial.printf("Connect the Loopback test adapter and press Enter.");
+  for(;;) {
+    if (Serial.available()) {
+      c = Serial.read();
+      switch(c) {
+        case 0xA: case 0xD:
+          goto ExecuteSelfTest;
+      }
+    }
+  }
+
+ExecuteSelfTest:
+  // Clear any extra characters
+  while (Serial.available()) {
+    c = Serial.read();
+  }
+
+  // All pins input
+  for(i = 0; i < 9; i++) {
+    pinMode(SelfTestPins[i].A, INPUT_PULLUP);
+    pinMode(SelfTestPins[i].B, INPUT_PULLUP);
+  }
+
+  for(i = 0; i < 9; i++) {
+    // Test A -> B
+    pinMode(SelfTestPins[i].A, OUTPUT_OPENDRAIN);
+    digitalWrite(SelfTestPins[i].A, LOW);
+
+    delay(10);
+
+    if(digitalRead(SelfTestPins[i].B) != LOW) {
+      Serial.printf("Self Test Failed. Pin %d (%s) was unable to pull Pin %d (%s) LOW.\r\n", SelfTestPins[i].pA, SelfTestPins[i].nA, SelfTestPins[i].pB, SelfTestPins[i].nB);
+      pinMode(SelfTestPins[i].A, INPUT_PULLUP);
+      return;
+    }
+
+    for(x = 0; x < 9; x++) {
+      if(x != i) {
+        if(digitalRead(SelfTestPins[x].A) == LOW) {
+          Serial.printf("Self Test Failed. Pin %d (%s) is shorted to Pin %d (%s).\r\n", SelfTestPins[i].pA, SelfTestPins[i].nA, SelfTestPins[x].pA, SelfTestPins[x].nA);
+          pinMode(SelfTestPins[i].A, INPUT_PULLUP);
+          return;
+        }
+        if(digitalRead(SelfTestPins[x].B) == LOW) {
+          Serial.printf("Self Test Failed. Pin %d (%s) is shorted to Pin %d (%s).\r\n", SelfTestPins[i].pA, SelfTestPins[i].nA, SelfTestPins[x].pB, SelfTestPins[x].nB);
+          pinMode(SelfTestPins[i].A, INPUT_PULLUP);
+          return;
+        }
+      }
+    }
+
+    pinMode(SelfTestPins[i].A, INPUT_PULLUP);
+
+    delay(10);
+
+    // Test B -> A
+    pinMode(SelfTestPins[i].B, OUTPUT_OPENDRAIN);
+    digitalWrite(SelfTestPins[i].B, LOW);
+
+    delay(10);
+
+    if(digitalRead(SelfTestPins[i].A) != LOW) {
+      Serial.printf("Self Test Failed. Pin %d (%s) was unable to pull Pin %d (%s) LOW.\r\n", SelfTestPins[i].pB, SelfTestPins[i].nB, SelfTestPins[i].pA, SelfTestPins[i].nA);
+      pinMode(SelfTestPins[i].B, INPUT_PULLUP);
+      return;
+    }
+
+    for(x = 0; x < 9; x++) {
+      if(x != i) {
+        if(digitalRead(SelfTestPins[x].A) == LOW) {
+          Serial.printf("Self Test Failed. Pin %d (%s) is shorted to Pin %d (%s).\r\n", SelfTestPins[i].pB, SelfTestPins[i].nB, SelfTestPins[x].pA, SelfTestPins[x].nA);
+          pinMode(SelfTestPins[i].B, INPUT_PULLUP);
+          return;
+        }
+        if(digitalRead(SelfTestPins[x].B) == LOW) {
+          Serial.printf("Self Test Failed. Pin %d (%s) is shorted to Pin %d (%s).\r\n", SelfTestPins[i].pB, SelfTestPins[i].nB, SelfTestPins[x].pB, SelfTestPins[x].nB);
+          pinMode(SelfTestPins[i].B, INPUT_PULLUP);
+          return;
+        }
+      }
+    }
+
+    pinMode(SelfTestPins[i].B, INPUT_PULLUP);
+
+    delay(10);
+  }
+
+  while (Serial.available()) {
+    c = Serial.read();
+  }
+
+  Serial.printf("Disconnect the Loopback test adapter and press Enter.");
+  for(;;) {
+    if (Serial.available()) {
+      c = Serial.read();
+      switch(c) {
+        case 0xA: case 0xD:
+          goto DisconnectHarness;
+      }
+    }
+  }
+
+DisconnectHarness:
+  // Clear any extra characters
+  while (Serial.available()) {
+    c = Serial.read();
+  }
+
+  for(i = 0; i < 9; i++) {
+    // Test A -> B
+    pinMode(SelfTestPins[i].A, OUTPUT_OPENDRAIN);
+    digitalWrite(SelfTestPins[i].A, LOW);
+
+    delay(10);
+
+    if(digitalRead(SelfTestPins[i].B) == LOW) {
+      Serial.printf("Self Test Failed. Pin %d (%s) is shorted to Pin %d (%s).\r\n", SelfTestPins[i].pA, SelfTestPins[i].nA, SelfTestPins[i].pB, SelfTestPins[i].nB);
+      pinMode(SelfTestPins[i].A, INPUT_PULLUP);
+      return;
+    }
+
+    // Test B -> A
+    pinMode(SelfTestPins[i].B, OUTPUT_OPENDRAIN);
+    digitalWrite(SelfTestPins[i].B, LOW);
+
+    delay(10);
+
+    if(digitalRead(SelfTestPins[i].A) == LOW) {
+      Serial.printf("Self Test Failed. Pin %d (%s) is shorted to Pin %d (%s).\r\n", SelfTestPins[i].pB, SelfTestPins[i].nB, SelfTestPins[i].pA, SelfTestPins[i].nA);
+      pinMode(SelfTestPins[i].B, INPUT_PULLUP);
+      return;
+    }
+  }
+
+//SelfTestComplete:
+  // Clear any extra characters
+  while (Serial.available()) {
+    c = Serial.read();
+  }
+
+  Serial.printf("Self Test Passed.\r\n");
+
+// On success, restore normal operation
+  // Input port
+  pinMode(ATN, INPUT_PULLUP);
+  pinMode(ACK, INPUT_PULLUP);
+  pinMode(RST, INPUT_PULLUP);
+  pinMode(SEL, INPUT_PULLUP);
+
+  // Output port
+  pinModeFastSlew(BSY, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(MSG, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(CD, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(IO, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(REQ, OUTPUT_OPENDRAIN);
+
+  pinModeFastSlew(DB0, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(DB1, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(DB2, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(DB3, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(DB4, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(DB5, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(DB6, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(DB7, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(DB8, OUTPUT_OPENDRAIN);
+
+  // Turn off the output port
+  SCSI_TARGET_INACTIVE();
+  
+  attachInterrupt(RST, onBusReset, FALLING);
+  attachInterrupt(SEL, SelectionPhaseISR, FALLING);
+
+  LED_OFF();
 }

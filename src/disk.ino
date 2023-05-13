@@ -10,7 +10,7 @@ byte checkBlockCommand(uint32_t adds, uint32_t len)
   if(!m_sel) {
     return STATUS_CHECK;
   }
-  if(!m_sel->m_file.isOpen()) {
+  if(!m_sel->m_rawPart && !m_sel->m_file.isOpen()) {
     m_sel->m_sense.m_key = NOT_READY; // Not ready
     m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
     m_sel->m_sense.m_key_specific[0] = 0x03;
@@ -53,7 +53,7 @@ void ReadCapacityCommandHandler() {
     m_phase = PHASE_STATUSIN;
     return;
   }
-  if(!m_sel->m_file.isOpen()) {
+  if(!m_sel->m_rawPart && !m_sel->m_file.isOpen()) {
     m_sts |= STATUS_CHECK;
     m_sel->m_sense.m_key = NOT_READY; // Not ready
     m_sel->m_sense.m_code = LUN_NOT_READY; // Logical Unit Not Ready, Manual Intervention Required
@@ -111,7 +111,11 @@ uint8_t onReadCommand(uint32_t adds, uint32_t len)
   if(sts) return sts;
   
   LED_ON();
-  writeDataPhaseSD(adds, len);
+  if(m_sel->m_rawPart) {
+    writeDataPhaseRaw(adds, len);
+  } else {
+    writeDataPhaseSD(adds, len);
+  }
   LED_OFF();
   return 0x00; //sts
 }
@@ -132,7 +136,11 @@ uint8_t onWriteCommand(uint32_t adds, uint32_t len)
   if(sts) return sts;
     
   LED_ON();
-  readDataPhaseSD(adds, len);
+  if(m_sel->m_rawPart) {
+    readDataPhaseRaw(adds, len);
+  } else {
+    readDataPhaseSD(adds, len);
+  }
   LED_OFF();
   return 0; //sts
 }
@@ -153,7 +161,11 @@ uint8_t onVerifyCommand(uint32_t adds, uint32_t len)
   if(sts) return sts;
   
   LED_ON();
-  verifyDataPhaseSD(adds, len);
+  if(m_sel->m_rawPart) {
+    verifyDataPhaseRaw(adds, len);
+  } else {
+    verifyDataPhaseSD(adds, len);
+  }
   LED_OFF();
   return 0; //sts
 }
