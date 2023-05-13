@@ -330,7 +330,7 @@ void readDataPhaseSD(uint32_t adds, uint32_t len)
  */
 void readDataPhaseRaw(uint32_t adds, uint32_t len)
 {
-#if WRITE_SPEED_OPTIMIZE
+#if WRITE_SPEED_OPTIMIZE_RAW
   uint32_t bigread = (MAX_BLOCKSIZE / m_sel->m_blocksize);
 #endif
   uint32_t i = 0;
@@ -343,7 +343,7 @@ void readDataPhaseRaw(uint32_t adds, uint32_t len)
   SET_IO_INACTIVE();
 
   while(i < len) {
-#if WRITE_SPEED_OPTIMIZE
+#if WRITE_SPEED_OPTIMIZE_RAW
     if((len-i) >= bigread) {
       readHandshakeBlock(m_buf, MAX_BLOCKSIZE);
       sd.card()->writeSectors(pos, m_buf, (MAX_BLOCKSIZE / 512));
@@ -417,7 +417,7 @@ void verifyDataPhaseSD(uint32_t adds, uint32_t len)
  */
 void verifyDataPhaseRaw(uint32_t adds, uint32_t len)
 {
-#if WRITE_SPEED_OPTIMIZE
+#if WRITE_SPEED_OPTIMIZE_RAW
   uint32_t bigread = (MAX_BLOCKSIZE / m_sel->m_blocksize);
 #endif
   uint32_t i = 0;
@@ -429,7 +429,7 @@ void verifyDataPhaseRaw(uint32_t adds, uint32_t len)
   SET_IO_INACTIVE();
 
   while(i < len) {
-#if WRITE_SPEED_OPTIMIZE
+#if WRITE_SPEED_OPTIMIZE_RAW
     if((len-i) >= bigread) {
       readHandshakeBlock(m_buf, MAX_BLOCKSIZE);
       i += bigread;
