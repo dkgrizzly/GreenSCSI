@@ -423,7 +423,7 @@ void verifyDataPhaseRaw(uint32_t adds, uint32_t len)
   uint32_t i = 0;
 
   //LOGN("DATAOUT PHASE(RAW)");
-  uint32_t pos = ((adds * m_sel->m_blocksize) / 512) + m_sel->m_firstSector;
+  //uint32_t pos = ((adds * m_sel->m_blocksize) / 512) + m_sel->m_firstSector;
   SET_MSG_INACTIVE();
   SET_CD_INACTIVE();
   SET_IO_INACTIVE();

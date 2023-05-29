@@ -177,84 +177,7 @@ void ModeSenseCommandHandler()
   }
 
   memset(m_responsebuffer, 0, sizeof(m_responsebuffer));
-#if 0
-  if(m_sel->m_quirks & QUIRKS_SASI) {
-    int pageCode = cmd2 & 0x3F;
-  
-    // Assuming sector size 512, number of sectors 25, number of heads 8 as default settings
-    int size = m_sel->m_fileSize;
-    int cylinders = (int)(size >> 9);
-    cylinders >>= 3;
-    cylinders /= 25;
-    int sectorsize = 512;
-    int sectors = 25;
-    int heads = 8;
-    // Sector size
-   int disksize = 0;
-    for(disksize = 16; disksize > 0; --(disksize)) {
-      if ((1 << disksize) == sectorsize)
-        break;
-    }
-    // Number of blocks
-    uint32_t diskblocks = (uint32_t)(size >> disksize);
-    int a = 4;
-    if(dbd == 0) {
-      uint32_t bl = m_sel->m_blocksize;
-      uint32_t bc = m_sel->m_fileSize / bl;
-      uint8_t c[8] = {
-        0,// Density code
-        bc >> 16, bc >> 8, bc,
-        0, //Reserve
-        bl >> 16, bl >> 8, bl
-      };
-      memcpy(&m_responsebuffer[4], c, 8);
-      a += 8;
-      m_responsebuffer[3] = 0x08;
-    }
-    switch(pageCode) {
-    case 0x3F:
-    {
-      m_responsebuffer[len + 0] = 0x01;
-      m_responsebuffer[len + 1] = 0x06;
-      a += 8;
-    }
-    case 0x03:  // drive parameters
-    {
-      m_responsebuffer[len + 0] = 0x80 | 0x03; // Page code
-      m_responsebuffer[len + 1] = 0x16; // Page length
-      m_responsebuffer[len + 2] = (uint8_t)(heads >> 8);// number of sectors / track
-      m_responsebuffer[len + 3] = (uint8_t)(heads);// number of sectors / track
-      m_responsebuffer[len + 10] = (uint8_t)(sectors >> 8);// number of sectors / track
-      m_responsebuffer[len + 11] = (uint8_t)(sectors);// number of sectors / track
-      int size = 1 << disksize;
-      m_responsebuffer[len + 12] = (uint8_t)(size >> 8);// number of sectors / track
-      m_responsebuffer[len + 13] = (uint8_t)(size);// number of sectors / track
-      a += 24;
-      if(pageCode != 0x3F) {
-        break;
-      }
-    }
-    case 0x04:  // drive parameters
-    {
-        LOGN("AddDrive");
-        m_responsebuffer[len + 0] = 0x04; // Page code
-        m_responsebuffer[len + 1] = 0x12; // Page length
-        m_responsebuffer[len + 2] = (cylinders >> 16);// Cylinder length
-        m_responsebuffer[len + 3] = (cylinders >> 8);
-        m_responsebuffer[len + 4] = cylinders;
-        m_responsebuffer[len + 5] = heads;   // Number of heads
-        a += 20;
-      if(pageCode != 0x3F) {
-        break;
-      }
-    }
-    default:
-      break;
-    }
-    m_responsebuffer[0] = a - 1;
-    writeDataPhase(len < a ? len : a, m_responsebuffer);
-  } else
-#endif
+
   {
     /* Default medium type */
     m_responsebuffer[len++] = (m_sel->m_type == DEV_OPTICAL) ? 0xf0 : 0x00;
@@ -282,7 +205,7 @@ void ModeSenseCommandHandler()
         m_responsebuffer[len++] = 0x04;
         m_responsebuffer[len++] = 0x00;
       } else {
-        uint32_t capacity = (m_sel->m_fileSize / m_sel->m_blocksize);
+        uint32_t capacity = (m_sel->m_fileSize / m_sel->m_blocksize) - 1;
         m_responsebuffer[len++] = 8;             /* Block descriptor length */
         m_responsebuffer[len++] = (capacity >> 24) & 0xff;
         m_responsebuffer[len++] = (capacity >> 16) & 0xff;
@@ -411,11 +334,14 @@ void ModeSenseCommandHandler()
           m_responsebuffer[len + 0] = MODEPAGE_RIGID_GEOMETRY; //Page code
           m_responsebuffer[len + 1] = 0x16; // Page length
           if((m_cmd[2] >> 6) != 1) {
-            uint32_t bc = m_sel->m_fileSize / m_sel->m_file;
-            m_responsebuffer[len + 2] = bc >> 16;// Cylinder length
-            m_responsebuffer[len + 3] = bc >> 8;
-            m_responsebuffer[len + 4] = bc;
-            m_responsebuffer[len + 5] = 1;    // Number of heads
+            m_responsebuffer[len + 2] = m_sel->m_cylinders >> 16; // Number of cylinders
+            m_responsebuffer[len + 3] = m_sel->m_cylinders >> 8;
+            m_responsebuffer[len + 4] = m_sel->m_cylinders;
+            m_responsebuffer[len + 5] = m_sel->m_heads;    // Number of heads
+            memcpy(&m_responsebuffer[len + 6], &m_responsebuffer[len + 2], 3); // Write Precomp Cyl
+            memcpy(&m_responsebuffer[len + 9], &m_responsebuffer[len + 2], 3); // Reduced Write Current Cyl
+            m_responsebuffer[len + 20] = 0x1C; // 7200 RPM
+            m_responsebuffer[len + 21] = 0x20;
           }
           len += 24;
           break;

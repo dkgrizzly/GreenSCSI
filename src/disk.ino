@@ -219,6 +219,10 @@ void ConfigureDisk(VirtualDevice_t *vdev, const char *image_name) {
     }
   }
 
+  vdev->m_sectors = 63;
+  vdev->m_heads = 16;
+  vdev->m_cylinders = (uint32_t)((uint64_t)vdev->m_fileSize / ((uint64_t)vdev->m_blocksize * (uint64_t)vdev->m_heads * (uint64_t)vdev->m_sectors));
+
   if(image_name) {
     char configname[MAX_FILE_PATH+1];
     memcpy(configname, image_name, MAX_FILE_PATH+1);

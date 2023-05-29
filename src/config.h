@@ -9,6 +9,8 @@
 #define ACK_INTERRUPTS         false
 #define READ_SPEED_OPTIMIZE    true       // 
 #define WRITE_SPEED_OPTIMIZE   true       // 
+#define READ_SPEED_OPTIMIZE_RAW    true       // 
+#define WRITE_SPEED_OPTIMIZE_RAW   true       // 
 #define USE_DB2ID_TABLE        true       // Use table to get ID from SEL-DB
 
 // SCSI config

@@ -1189,101 +1189,132 @@ void makeimagecmd(int argc, char **argv) {
   FsFile file;
   char tmp_path[MAX_FILE_PATH+1];
   uint64_t fileSize = 0;
+  int i;
+  bool write_mbr = 0;
+  uint64_t cylinders = 0;
+  uint64_t heads = 16;
+  uint64_t sectors = 63;
+  uint64_t blocksize = 512;
   
-  if(argc < 4) {
-    return;
-  }
+  tmp_path[0] = 0;
 
-  fixupPath(tmp_path, argv[1]);
-  if(strncmp(tmp_path, "/sd/", 4)) {
-    errorlevel = -1;
-    Serial.print("ERROR");
-    if(scriptlevel >= 0) Serial.printf(" on line %d of '%s'", exec_line, exec_filename);
-    Serial.printf(": Can only create images on the SD Card.\r\n");
-    return;
-  }
-
-  if(!strcmp(argv[2], "msdos") || !strcmp(argv[2], "generic")) {
-    char *suffix = NULL;
-    fileSize = strtoul(argv[3], &suffix, 0);
-    if(suffix && suffix[0] != 0) {
-      if(!strcmp(suffix, "KB")) fileSize *= 1000ull;
-      if(!strcmp(suffix, "KiB")) fileSize *= 1024ull;
-      if(!strcmp(suffix, "MB")) fileSize *= 1000000ull;
-      if(!strcmp(suffix, "MiB")) fileSize *= 1024ull * 1024ull;
-      if(!strcmp(suffix, "GB")) fileSize *= 1000000000ull;
-      if(!strcmp(suffix, "GiB")) fileSize *= 1024ull * 1024ull * 1024ull;
-    }
-
-    if(sd.exists(tmp_path+3)) {
-      errorlevel = -1;
-      Serial.print("ERROR");
-      if(scriptlevel >= 0) Serial.printf(" on line %d of '%s'", exec_line, exec_filename);
-      Serial.printf(": file '%s' already exists.\r\n", tmp_path);
-      return;
-    }
-    if(fileSize < (5ull * 1024ull * 1024ull)) {
-      errorlevel = -1;
-      Serial.print("ERROR");
-      if(scriptlevel >= 0) Serial.printf(" on line %d of '%s'", exec_line, exec_filename);
-      Serial.printf(": Image would be less than 5 MiB.\r\n");
-      return;
-    }
-    if(fileSize > (2048ull * 1024ull * 1024ull)) {
-      errorlevel = -1;
-      Serial.print("ERROR");
-      if(scriptlevel >= 0) Serial.printf(" on line %d of '%s'", exec_line, exec_filename);
-      Serial.printf(": Image would be larger than 2 GiB.\r\n");
-      return;
-    }
-
-    // Fixup image size to our 64 Head 32 Sector X Cylinders formula
-    uint64_t cyl = fileSize / (512ull * 64ull * 32ull);
-    if(fileSize & 0xFFFFF) cyl++;
-    if(cyl > 2048) cyl = 2048;
-    fileSize = cyl * (512ull * 64ull * 32ull);
-
-    if(!file.open(tmp_path+3, O_WRONLY | O_CREAT | O_TRUNC)) {
-      errorlevel = -1;
-      Serial.print("ERROR");
-      if(scriptlevel >= 0) Serial.printf(" on line %d of '%s'", exec_line, exec_filename);
-      Serial.printf(": Unable to open '%s'.\r\n", tmp_path);
-    } else {
-      // Take advantage of our cylinders being 1MB
-#if 0
-      if(!file.preAllocate(fileSize)) {
-        file.close();
-        sd.remove(tmp_path+3);
-
+  for(i = 1; i < argc; i++) {
+    if(argv[i][0] == '/') {
+      fixupPath(tmp_path, argv[i]);
+      if(strncmp(tmp_path, "/sd/", 4)) {
         errorlevel = -1;
         Serial.print("ERROR");
         if(scriptlevel >= 0) Serial.printf(" on line %d of '%s'", exec_line, exec_filename);
-        Serial.printf(": Pre-allocate failed, SD Card must be formatted as ExFat.\r\n");
+        Serial.printf(": Can only create images on the SD Card.\r\n");
         return;
       }
-#endif
-
-      if(!strcmp(argv[2], "msdos")) {
-        file.write(mbr_bin, 512);
-        fileSize -= 512;
-      }
-
-      memset(zero, 0, 512);
-      
-      while(fileSize) {
-        if((fileSize & 0x1FFF) == 0)
-           Serial.printf(".");
-        if((fileSize & 0x7FFFF) == 0)
-           Serial.printf("\r\n");
-        file.write(zero, 512);
-        fileSize -= 512;
-      }
-      Serial.printf("\r\n");
-      
-      file.close();
-
-      return;
     }
+    if(!strcmp(argv[i], "-msdos")) {
+      write_mbr = 1;
+    } else
+    if(!strcmp(argv[i], "-b") && (i+1 < argc)) {
+      i++;
+      blocksize = strtoul(argv[i], NULL, 0);
+    } else
+    if(!strcmp(argv[i], "-c") && (i+1 < argc)) {
+      i++;
+      cylinders = strtoul(argv[i], NULL, 0);
+    } else
+    if(!strcmp(argv[i], "-h") && (i+1 < argc)) {
+      i++;
+      heads = strtoul(argv[i], NULL, 0);
+    } else
+    if(!strcmp(argv[i], "-s") && (i+1 < argc)) {
+      i++;
+      sectors = strtoul(argv[i], NULL, 0);
+    } else
+    {
+      char *suffix = NULL;
+      fileSize = strtoul(argv[i], &suffix, 0);
+      if(suffix && suffix[0] != 0) {
+        if(!strcmp(suffix, "KB")) fileSize *= 1000ull;
+        if(!strcmp(suffix, "KiB")) fileSize *= 1024ull;
+        if(!strcmp(suffix, "MB")) fileSize *= 1000000ull;
+        if(!strcmp(suffix, "MiB")) fileSize *= 1024ull * 1024ull;
+        if(!strcmp(suffix, "GB")) fileSize *= 1000000000ull;
+        if(!strcmp(suffix, "GiB")) fileSize *= 1024ull * 1024ull * 1024ull;
+      }
+    }
+  }
+
+  if(tmp_path[0] == 0) {
+    errorlevel = -1;
+    Serial.print("ERROR");
+    if(scriptlevel >= 0) Serial.printf(" on line %d of '%s'", exec_line, exec_filename);
+    Serial.printf(": no path specified.\r\n");
+    return;
+  }
+
+  if((fileSize == 0) && (cylinders != 0)) {
+    fileSize = cylinders * heads * sectors * blocksize;
+  } else if(fileSize != 0){
+    // Fixup image size to our CHS formula
+    // Capping out at ~2GB
+    cylinders = fileSize / (blocksize * heads * sectors);
+    if(fileSize & 0xFFFFF) cylinders++;
+    if(cylinders > 4095) cylinders = 4095;
+    fileSize = cylinders * (blocksize * heads * sectors);
+  } else {
+    errorlevel = -1;
+    Serial.print("ERROR");
+    if(scriptlevel >= 0) Serial.printf(" on line %d of '%s'", exec_line, exec_filename);
+    Serial.printf(": no image size specified.\r\n");
+    return;
+  }
+
+  if(sd.exists(tmp_path+3)) {
+    errorlevel = -1;
+    Serial.print("ERROR");
+    if(scriptlevel >= 0) Serial.printf(" on line %d of '%s'", exec_line, exec_filename);
+    Serial.printf(": file '%s' already exists.\r\n", tmp_path);
+    return;
+  }
+  if(fileSize < (5ull * 1024ull * 1024ull)) {
+    errorlevel = -1;
+    Serial.print("ERROR");
+    if(scriptlevel >= 0) Serial.printf(" on line %d of '%s'", exec_line, exec_filename);
+    Serial.printf(": Image would be less than 5 MiB.\r\n");
+    return;
+  }
+  if(fileSize > (2048ull * 1024ull * 1024ull)) {
+    errorlevel = -1;
+    Serial.print("ERROR");
+    if(scriptlevel >= 0) Serial.printf(" on line %d of '%s'", exec_line, exec_filename);
+    Serial.printf(": Image would be larger than 2 GiB.\r\n");
+    return;
+  }
+
+  if(!file.open(tmp_path+3, O_WRONLY | O_CREAT | O_TRUNC)) {
+    errorlevel = -1;
+    Serial.print("ERROR");
+    if(scriptlevel >= 0) Serial.printf(" on line %d of '%s'", exec_line, exec_filename);
+    Serial.printf(": Unable to open '%s'.\r\n", tmp_path);
+  } else {
+    if(write_mbr) {
+      file.write(mbr_bin, 512);
+      fileSize -= 512;
+    }
+
+    memset(zero, 0, 512);
+    
+    while(fileSize) {
+      if((fileSize & 0x1FFF) == 0)
+         Serial.printf(".");
+      if((fileSize & 0x7FFFF) == 0)
+         Serial.printf("\r\n");
+      file.write(zero, (fileSize < 512) ? fileSize : 512);
+      fileSize -= (fileSize < 512) ? fileSize : 512;
+    }
+    Serial.printf("\r\n");
+    
+    file.close();
+
+    return;
   }
 
   errorlevel = -1;
@@ -1441,6 +1472,33 @@ void setcmd(int argc, char **argv) {
       if((param_name) && !strcasecmp(param_name, "/blocksize")) {
         if(argc<3) {
           Serial.printf("%d\r\n", h->m_blocksize);
+        } else {
+          h->m_blocksize = strtol(argv[2], NULL, 0);
+        }
+        return;
+      }
+
+      if((param_name) && !strcasecmp(param_name, "/sectors")) {
+        if(argc<3) {
+          Serial.printf("%d\r\n", h->m_sectors);
+        } else {
+          h->m_blocksize = strtol(argv[2], NULL, 0);
+        }
+        return;
+      }
+
+      if((param_name) && !strcasecmp(param_name, "/heads")) {
+        if(argc<3) {
+          Serial.printf("%d\r\n", h->m_heads);
+        } else {
+          h->m_blocksize = strtol(argv[2], NULL, 0);
+        }
+        return;
+      }
+
+      if((param_name) && !strcasecmp(param_name, "/cylinders")) {
+        if(argc<3) {
+          Serial.printf("%d\r\n", h->m_cylinders);
         } else {
           h->m_blocksize = strtol(argv[2], NULL, 0);
         }
@@ -1964,15 +2022,21 @@ char helponVar[] =
 
 char helponMkImg[] =
   "\r\n"
-  "mkimg <file> <type> <size>\r\n"
+  "mkimg <file> [-msdos] [-b blocksize] [-c cylinders] [-h heads] [-s sectors] [size]\r\n"
   "\r\n"
-  "  The mkimg command creates image files on ExFat volumes.\r\n"
+  "  The mkimg command creates image files on FAT or ExFat volumes.\r\n"
+  "This command is limited to 4095 cylinders or approximately 2GB.\r\n"
+  "To create larger images, use a USB card reader.\r\n"
   "\r\n"
-  "<type> specifies the partitioning scheme to preload the image with.\r\n"
-  "       generic creates a blank disk ready for partitioning.\r\n"
-  "       msdos preloads an MBR boot menu, and in the future may pre-partition and format.\r\n"
+  "       -msdos preloads an msdos compatible MBR.\r\n"
+  "       -b     sets the sector size          (default=512).\r\n"
+  "       -c     sets the number of cylinders.\r\n"
+  "       -h     sets the heads                (default=16).\r\n"
+  "       -s     sets the sectors per track    (default=63).\r\n"
   "\r\n"
-  "<size> specifies file size and supports a KB,MB,GB (1000) or KiB,MiB,GiB (1024) suffix.\r\n"
+  "You can specify the size either via the combination of -c -h -s parameters, or\r\n"
+  "specify the file size with optional KB,MB,GB (1000) or KiB,MiB,GiB (1024) suffix\r\n"
+  "and a cylinder count close to your desired size will be chosen for you.\r\n"
   "\r\n"
 ;
 
@@ -2000,7 +2064,7 @@ Commands_t GlobalCommands[] = {
   { "mount",      "/vdevs/vdev",    1,             "<path>",                     helponMount,    mountcmd,         NULL },
   { "map",        "/vdevs/vdev",    1,             "<lun>",                      helponMapV,     mapcmd,           NULL },
   { "cat",        "/sd",            1,             "<file>",                     helponCat,      catcmd,           NULL },
-  { "mkimg",      "/sd",            1,             "<file>",                     helponMkImg,    makeimagecmd,     NULL },
+  { "mkimg",      "/sd",            1,             "<file> <size>",              helponMkImg,    makeimagecmd,     NULL },
   { "unlink",     "/",              1,             "<path>",                     helponUnlink,   unlinkcmd,        NULL },
   { "exec",       "/",              1,             "<script>",                   helponExec,     execcmd,          NULL },
   { "goto",       "/",              1,             NULL,                         NULL,           gotocmd,          NULL },

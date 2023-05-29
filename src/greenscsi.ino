@@ -213,6 +213,9 @@ typedef struct VirtualDevice_s
   char        m_filename[MAX_FILE_PATH+1];
   FsFile      m_file;                 // File object
   uint64_t    m_fileSize;             // File size
+  uint8_t     m_sectors;
+  uint8_t     m_heads;
+  uint32_t    m_cylinders;
   size_t      m_blocksize;            // SCSI BLOCK size
   uint32_t    m_firstSector;          // First sector for partition
   boolean     m_rawPart;              // Raw Partition (True) or Image File (False)
@@ -260,7 +263,7 @@ typedef enum {
 phase_t       m_phase = PHASE_BUSFREE;
 
 // Log File
-#define VERSION "1.4-20230513"
+#define VERSION "1.4-20230529"
 #if DEBUG == 2
 #define LOG_FILENAME "LOG.txt"
 FsFile LOG_FILE;
@@ -293,6 +296,8 @@ boolean OpenImage(VirtualDevice_t *h, const char *image_name)
   h->m_file = sd.open(image_name, O_RDWR);
   if(h->m_file.isOpen()) {
     h->m_fileSize = h->m_file.size();
+    h->m_cylinders = (uint32_t)((uint64_t)h->m_fileSize / ((uint64_t)h->m_blocksize * (uint64_t)h->m_heads * (uint64_t)h->m_sectors));
+
     return true; // File opened
   }
   return false;
@@ -342,6 +347,7 @@ boolean OpenDiskImage(VirtualDevice_t *h, const char *image_name, int blocksize)
     
     h->m_blocksize = blocksize;
     h->m_fileSize = ((uint64_t)mbr->part[partIndex].totalSectors) * ((uint64_t)512);
+    h->m_cylinders = (uint32_t)((uint64_t)h->m_fileSize / ((uint64_t)h->m_blocksize * (uint64_t)h->m_heads * (uint64_t)h->m_sectors));
     h->m_rawPart = true;
     h->m_firstSector = mbr->part[partIndex].firstSector;
 
@@ -366,6 +372,7 @@ boolean OpenDiskImage(VirtualDevice_t *h, const char *image_name, int blocksize)
   if(h->m_file.isOpen())
   {
     h->m_fileSize = h->m_file.size();
+    h->m_cylinders = (uint32_t)((uint64_t)h->m_fileSize / ((uint64_t)h->m_blocksize * (uint64_t)h->m_heads * (uint64_t)h->m_sectors));
     LOG(" Imagefile: ");
     LOG(image_name);
     if(h->m_fileSize>0)
