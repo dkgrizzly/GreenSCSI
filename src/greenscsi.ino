@@ -1037,14 +1037,14 @@ typedef struct SelfTestPins_s {
 
 SelfTestPins_t SelfTestPins[] = {
   { IO, DB0, 50, 2, "I/O", "DB0" },
-  { IO, DB0, 48, 4, "REQ", "DB1" },
-  { IO, DB0, 46, 6, "C/D", "DB2" },
-  { IO, DB0, 44, 8, "SEL", "DB3" },
-  { IO, DB0, 42, 10, "MSG", "DB4" },
-  { IO, DB0, 50, 12, "RST", "DB5" },
-  { IO, DB0, 38, 14, "ACK", "DB6" },
-  { IO, DB0, 36, 16, "BSY", "DB7" },
-  { IO, DB0, 32, 18, "ATN", "DBP" },
+  { REQ, DB1, 48, 4, "REQ", "DB1" },
+  { CD, DB2, 46, 6, "C/D", "DB2" },
+  { SEL, DB3, 44, 8, "SEL", "DB3" },
+  { MSG, DB4, 42, 10, "MSG", "DB4" },
+  { RST, DB5, 50, 12, "RST", "DB5" },
+  { ACK, DB6, 38, 14, "ACK", "DB6" },
+  { BSY, DB7, 36, 16, "BSY", "DB7" },
+  { ATN, DBP, 32, 18, "ATN", "DBP" },
 };
 
 void SelfTest(int argc, char **argv) {
