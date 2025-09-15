@@ -14,3 +14,5 @@ GreenSCSI, BlueSCSI & ArdSCSino are hardware that reproduce SCSI devices (hard d
 `ArdSCSino-stm32` created by https://github.com/ztto/ArdSCSino-stm32 [ztto] is the STM32 version of `ArdSCSino`
 
 `ArdSCSino` created by https://twitter.com/h_koma2 [Tambo (TNB Seisakusho)]
+
+Build against LittleFS commit a061862589841627424170a12a246ce5660a4f0a if using Arduino 1.8.19 and Teensyduino 1.8.5

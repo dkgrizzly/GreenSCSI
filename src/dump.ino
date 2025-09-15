@@ -21,7 +21,7 @@ void initiatorTakeBus() {
   pinModeFastSlew(DB5, OUTPUT_OPENDRAIN);
   pinModeFastSlew(DB6, OUTPUT_OPENDRAIN);
   pinModeFastSlew(DB7, OUTPUT_OPENDRAIN);
-  pinModeFastSlew(DB8, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(DBP, OUTPUT_OPENDRAIN);
 
   SCSI_INITIATOR_INACTIVE();
 }
@@ -49,7 +49,7 @@ void initiatorReleaseBus() {
   pinModeFastSlew(DB5, OUTPUT_OPENDRAIN);
   pinModeFastSlew(DB6, OUTPUT_OPENDRAIN);
   pinModeFastSlew(DB7, OUTPUT_OPENDRAIN);
-  pinModeFastSlew(DB8, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(DBP, OUTPUT_OPENDRAIN);
 
   // Turn off the output port
   SCSI_TARGET_INACTIVE();

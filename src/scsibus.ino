@@ -9,15 +9,15 @@
 #define PTY(V)   ((1^((V)^((V)>>1)^((V)>>2)^((V)>>3)^((V)>>4)^((V)>>5)^((V)>>6)^((V)>>7)))&1)
 
 // Set DBP
-#define DBP(D)    ((((uint32_t)(D)<<16)|(PTY(D)<<11)) ^ SCSI_DB_MASK)
+#define CALCPARITY(D)    ((((uint32_t)(D)<<16)|(PTY(D)<<11)) ^ SCSI_DB_MASK)
 
-#define DBP8(D)   DBP(D),DBP(D+1),DBP(D+2),DBP(D+3),DBP(D+4),DBP(D+5),DBP(D+6),DBP(D+7)
-#define DBP32(D)  DBP8(D),DBP8(D+8),DBP8(D+16),DBP8(D+24)
+#define CALCPARITY8(D)   CALCPARITY(D),CALCPARITY(D+1),CALCPARITY(D+2),CALCPARITY(D+3),CALCPARITY(D+4),CALCPARITY(D+5),CALCPARITY(D+6),CALCPARITY(D+7)
+#define CALCPARITY32(D)  CALCPARITY8(D),CALCPARITY8(D+8),CALCPARITY8(D+16),CALCPARITY8(D+24)
 
 // BSRR register control value that simultaneously performs DB set, DP set, and REQ = H (inactrive)
 const uint32_t db_bsrr[256]={
-  DBP32(0x00),DBP32(0x20),DBP32(0x40),DBP32(0x60),
-  DBP32(0x80),DBP32(0xA0),DBP32(0xC0),DBP32(0xE0)
+  CALCPARITY32(0x00),CALCPARITY32(0x20),CALCPARITY32(0x40),CALCPARITY32(0x60),
+  CALCPARITY32(0x80),CALCPARITY32(0xA0),CALCPARITY32(0xC0),CALCPARITY32(0xE0)
 };
 // Parity bit acquisition
 #define PARITY(DB) ((db_bsrr[DB & 0xff] & 0x0800) >> 11)

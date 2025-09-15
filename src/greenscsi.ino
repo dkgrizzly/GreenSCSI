@@ -114,7 +114,7 @@ boolean debuglog = 0;
 #define DB5       46    // SCSI:DB5  Port B Bit 21
 #define DB6       44    // SCSI:DB6  Port B Bit 22
 #define DB7       45    // SCSI:DB7  Port B Bit 23
-#define DB8       32    // SCSI:DBP  Port B Bit 11
+#define DBP       32    // SCSI:DBP  Port B Bit 11
 
 #define ATN       12    // SCSI:ATN  Port C Bit 7
 #define BSY       10    // SCSI:BSY  Port C Bit 4
@@ -502,7 +502,7 @@ void setup()
   pinModeFastSlew(DB5, OUTPUT_OPENDRAIN);
   pinModeFastSlew(DB6, OUTPUT_OPENDRAIN);
   pinModeFastSlew(DB7, OUTPUT_OPENDRAIN);
-  pinModeFastSlew(DB8, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(DBP, OUTPUT_OPENDRAIN);
 
   // Turn off the output port
   SCSI_TARGET_INACTIVE();
@@ -1247,7 +1247,7 @@ DisconnectHarness:
   pinModeFastSlew(DB5, OUTPUT_OPENDRAIN);
   pinModeFastSlew(DB6, OUTPUT_OPENDRAIN);
   pinModeFastSlew(DB7, OUTPUT_OPENDRAIN);
-  pinModeFastSlew(DB8, OUTPUT_OPENDRAIN);
+  pinModeFastSlew(DBP, OUTPUT_OPENDRAIN);
 
   // Turn off the output port
   SCSI_TARGET_INACTIVE();
